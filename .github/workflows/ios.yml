@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core-tests:
+    name: Core tests (swift test, Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Swift
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "5.9"
+      - name: swift test
+        run: swift test
+
+  ios-build:
+    name: iOS build & tests (simulator)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        run: xcodegen generate
+      - name: Pick an iPhone simulator
+        run: |
+          DEVICE=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone [0-9]+[^(]*' | sed 's/ *$//')
+          echo "SIM_NAME=$DEVICE" | tee -a "$GITHUB_ENV"
+      - name: Build and test
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project RegBoard.xcodeproj \
+            -scheme RegBoard \
+            -destination "platform=iOS Simulator,name=${SIM_NAME}" \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee xcodebuild.log
+      - name: Build unsigned device .app (app + keyboard extension)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project RegBoard.xcodeproj \
+            -scheme RegBoard \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/RegBoard.app Payload/
+          zip -qr RegBoard-unsigned.ipa Payload
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: RegBoard-unsigned-ipa
+          path: RegBoard-unsigned.ipa
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: xcodebuild.log
+          if-no-files-found: ignore

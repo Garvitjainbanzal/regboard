@@ -1,0 +1,49 @@
+# XcodeGen spec — generate the Xcode project on a Mac with:  brew install xcodegen && xcodegen generate
+name: RegBoard
+options:
+  bundleIdPrefix: com.regboard
+  deploymentTarget: { iOS: "16.0" }
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: ""          # set your Apple team ID (or in Xcode: Signing & Capabilities)
+    CODE_SIGN_STYLE: Automatic
+targets:
+  RegBoard:
+    type: application
+    platform: iOS
+    sources: [GboardCloneApp, Shared]
+    info: { path: GboardCloneApp/Info.plist }
+    entitlements: { path: GboardCloneApp/GboardCloneApp.entitlements }
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.regboard.regboard
+        INFOPLIST_FILE: GboardCloneApp/Info.plist
+        TARGETED_DEVICE_FAMILY: "1"
+    dependencies:
+      - target: RegBoardKeyboard
+  RegBoardKeyboard:
+    type: app-extension
+    platform: iOS
+    sources: [KeyboardExtension, Shared]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.regboard.regboard.keyboard
+        INFOPLIST_FILE: KeyboardExtension/Info.plist
+        CODE_SIGN_ENTITLEMENTS: KeyboardExtension/KeyboardExtension.entitlements
+        SKIP_INSTALL: YES
+  RegBoardTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [Tests]
+    dependencies: [{ target: RegBoard }]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.regboard.regboard.tests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/RegBoard.app/RegBoard"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+schemes:
+  RegBoard:
+    build: { targets: { RegBoard: all, RegBoardKeyboard: all } }
+    test: { targets: [RegBoardTests] }
