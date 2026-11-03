@@ -12,11 +12,23 @@ struct RegBoardApp: App {
 final class AppModel: ObservableObject {
     private let store = SettingsStore()
     let recents = RecentEmojiStore()
-    @Published var settings: KeyboardSettings { didSet { store.save(settings) } }
+    @Published var settings: KeyboardSettings { didSet { scheduleSave() } }
 
     init() { settings = store.load() }
 
     func eraseEverything() { recents.clear(); settings = KeyboardSettings() }
+
+    // Debounce saves so rapid slider drags don't encode+write on every tick.
+    private var saveWork: DispatchWorkItem?
+    private func scheduleSave() {
+        saveWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.store.save(self.settings)
+        }
+        saveWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+    }
 }
 
 struct RootView: View {

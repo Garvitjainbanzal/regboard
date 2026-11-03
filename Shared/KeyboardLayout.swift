@@ -125,10 +125,12 @@ public enum KeyboardLayouts {
         if page == .letters {
             bottom.append(KeyDef(.switchToNumbers, label: "123", widthWeight: 1.3))
             if needsGlobe { bottom.append(KeyDef(.nextKeyboard, label: "🌐", widthWeight: 1.0)) }
-            bottom.append(KeyDef(.emoji, label: "☺︎", widthWeight: 1.0))
-            bottom.append(KeyDef(.space, label: spaceName, widthWeight: needsGlobe ? 3.6 : 4.6))
-            bottom.append(KeyDef(.character("."), label: ".", alternates: ["…", ",", "?", "!"], widthWeight: 0.8))
-            bottom.append(KeyDef(.hideKeyboard, label: "⌄", widthWeight: 0.9))
+            bottom.append(KeyDef(.emoji, label: "☺︎", widthWeight: 0.85))
+            let spaceWeight: Double = needsGlobe ? 4.6 : 5.6
+            bottom.append(KeyDef(.space, label: spaceName, widthWeight: spaceWeight))
+            // "." key: tap types a period; long-press shows "…  ,  ?  !  ⌄" —
+            // the ⌄ sentinel is intercepted by InputController.insertAlternate to hide the keyboard.
+            bottom.append(KeyDef(.character("."), label: ".", alternates: ["…", ",", "?", "!", "⌄"], widthWeight: 0.95))
         } else {
             // Number / symbol panel: ABC (round) · , · space-with-language-label (+ "1 2 3 4" badge) · . · enter
             bottom.append(KeyDef(.switchToLetters, label: "ABC", pill: true, widthWeight: 1.4))

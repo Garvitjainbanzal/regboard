@@ -12,7 +12,12 @@ final class KeyView: UIView {
     var onRepeat: (() -> Void)?
     var onSpaceDrag: ((Int) -> Void)?
     var onHaptic: (() -> Void)?
-    var onSwipeDeleteWord: (() -> Void)?
+    /// Called during a swipe-left gesture on backspace with the number of characters to select
+    /// (always negative). The receiver should move the cursor left to show the selection.
+    var onSwipeSelectChars: ((Int) -> Void)?
+    /// Called when a swipe-left on backspace is committed (finger lifted) —
+    /// the receiver should delete whatever is currently selected.
+    var onCommitSwipeDelete: (() -> Void)?
     var onShiftRelease: ((CGPoint) -> Void)?
     var onTrackpadChanged: ((Bool) -> Void)?
     var longPressDelay: TimeInterval = 0.35
@@ -28,6 +33,9 @@ final class KeyView: UIView {
     private var repeatTimer: Timer?
     private var touchStart: CGPoint = .zero
     private var lastX: CGFloat = 0
+    // Tracks how many character positions we have moved left via swipe-select
+    // so we know how far back to delete on lift.
+    private var swipeSelectCount: Int = 0
     private var dragged = false, swipeDeleted = false, shiftSwiped = false, flicked = false, trackpad = false
     private var selectedAlt = 0
     private var pressed = false { didSet { applyColors() } }
@@ -107,6 +115,7 @@ final class KeyView: UIView {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let t = touches.first else { return }
         pressed = true; dragged = false; swipeDeleted = false; shiftSwiped = false; flicked = false; trackpad = false
+        swipeSelectCount = 0
         touchStart = t.location(in: self); lastX = touchStart.x
         if soundEnabled { UIDevice.current.playInputClick() }
         onHaptic?()
@@ -117,8 +126,13 @@ final class KeyView: UIView {
                 longPressTimer = Timer.scheduledTimer(withTimeInterval: longPressDelay, repeats: false) { [weak self] _ in self?.showPopover() }
             }
         case .backspace:
-            onTap?(def)     // immediate delete
-            longPressTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in self?.startRepeat() }
+            // Fire the first delete immediately on touch-down so the keyboard feels
+            // instantly responsive, but do NOT start the repeat — that waits for hold.
+            onTap?(def)
+            longPressTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in
+                guard let self, self.longPressTimer != nil else { return }
+                self.startRepeat()
+            }
         case .space:
             longPressTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: false) { [weak self] _ in self?.beginTrackpad() }
         default: break
@@ -140,9 +154,28 @@ final class KeyView: UIView {
                 flicked = true; longPressTimer?.invalidate(); preview?.removeFromSuperview(); preview = nil
             }
         case .backspace:
-            if p.x - lastX < -40 {      // slide left: delete a word per 40pt
-                swipeDeleted = true; repeatTimer?.invalidate(); longPressTimer?.invalidate()
-                onSwipeDeleteWord?(); lastX = p.x
+            // Swipe-left: cancel repeat, accumulate selection steps, show selection live.
+            // Each 20pt of leftward travel selects one more character. On lift we delete all.
+            let totalDelta = touchStart.x - p.x   // positive when swiping left
+            if totalDelta > 20 {
+                if !swipeDeleted {
+                    // First entry into swipe-select mode: cancel the repeat/long-press timers
+                    // and cancel the initial instant-delete if we haven't done it yet
+                    // (the user is clearly swiping, not tapping).
+                    swipeDeleted = true
+                    repeatTimer?.invalidate(); longPressTimer?.invalidate()
+                    repeatTimer = nil; longPressTimer = nil
+                }
+                // How many characters should be selected based on total swipe distance.
+                // Threshold per character: 20pt.
+                let wantSelected = Int(totalDelta / 20)
+                let delta = wantSelected - swipeSelectCount
+                if delta > 0 {
+                    // Select more characters to the left.
+                    onSwipeSelectChars?(-delta)
+                    swipeSelectCount += delta
+                    onHaptic?()
+                }
             }
         case .shift:
             if !bounds.insetBy(dx: -10, dy: -10).contains(p) { shiftSwiped = true }
@@ -167,23 +200,40 @@ final class KeyView: UIView {
         }
         if flicked, let h = def.hint { onAlternate?(h); return }
         switch def.action {
-        case .shift where shiftSwiped: if let t = touches.first { onShiftRelease?(t.location(in: nil)) }
-        case .backspace: break            // already fired on touch-down
-        case .space where dragged || trackpad: break
-        default: if bounds.insetBy(dx: -8, dy: -8).contains(touches.first?.location(in: self) ?? .zero) { onTap?(def) }
+        case .shift where shiftSwiped:
+            if let t = touches.first { onShiftRelease?(t.location(in: nil)) }
+        case .backspace where swipeDeleted:
+            // Commit: delete all the currently selected characters.
+            if swipeSelectCount > 0 { onCommitSwipeDelete?() }
+        case .backspace:
+            break   // Already fired on touch-down; no-op here.
+        case .space where dragged || trackpad:
+            break
+        default:
+            if bounds.insetBy(dx: -8, dy: -8).contains(touches.first?.location(in: self) ?? .zero) { onTap?(def) }
         }
     }
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) { cleanup() }
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        // If we had built up a selection, move the cursor back to where it was
+        // so the cancelled gesture leaves no side-effects.
+        if swipeDeleted, swipeSelectCount > 0 { onSwipeSelectChars?(swipeSelectCount) }
+        cleanup()
+    }
 
     private func startRepeat() {
-        repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.07, repeats: true) { [weak self] _ in self?.onRepeat?() }
+        repeatTimer = Timer.scheduledTimer(withTimeInterval: 0.07, repeats: true) { [weak self] _ in
+            // Guard: if the timer was already invalidated by cleanup() but this fire snuck through,
+            // do nothing. This prevents a single stray delete after touch-cancel.
+            guard let self, self.repeatTimer != nil else { return }
+            self.onRepeat?()
+        }
     }
     private func beginTrackpad() {
         trackpad = true; updateLabel(); applyColors(); onHaptic?(); onTrackpadChanged?(true)
     }
     private func cleanup() {
         let wasTrackpad = trackpad
-        pressed = false; trackpad = false
+        pressed = false; trackpad = false; swipeSelectCount = 0
         longPressTimer?.invalidate(); repeatTimer?.invalidate(); longPressTimer = nil; repeatTimer = nil
         popover?.removeFromSuperview(); popover = nil; altLabels = []; preview?.removeFromSuperview(); preview = nil
         if wasTrackpad { updateLabel(); onTrackpadChanged?(false) }

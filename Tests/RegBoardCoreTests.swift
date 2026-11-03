@@ -72,6 +72,12 @@ final class InputControllerTests: XCTestCase {
         proxy.text = "hi!"; ctl.deleteWord(); XCTAssertEqual(proxy.text, "hi")
     }
     func testHideKeyboardCallback() { var hidden = false; ctl.onHide = { hidden = true }; ctl.handle(.hideKeyboard); XCTAssertTrue(hidden); XCTAssertTrue(proxy.text.isEmpty) }
+    func testHideViaInsertAlternateSentinel() {
+        var hidden = false; ctl.onHide = { hidden = true }
+        ctl.insertAlternate("⌄")
+        XCTAssertTrue(hidden)
+        XCTAssertTrue(proxy.text.isEmpty, "Sentinel should not be typed as a character")
+    }
 
     // 1. Double-space full stop (toggle)
     func testDoubleSpacePeriodOn() {
@@ -132,7 +138,9 @@ final class LayoutTests: XCTestCase {
         let r = rows()
         XCTAssertEqual(r.count, 5); XCTAssertEqual(r[1].count, 10); XCTAssertEqual(r[2].count, 9); XCTAssertEqual(r[3].count, 9)
         XCTAssertEqual(r.last!.first!.action, .switchToNumbers)
-        XCTAssertTrue(r.last!.contains { $0.action == .hideKeyboard })
+        // Hide keyboard is now accessed via long-press on "." (sentinel "⌄" alternate), not a dedicated key.
+        XCTAssertFalse(r.last!.contains { $0.action == .hideKeyboard })
+        XCTAssertTrue(r.last!.first { if case .character(".") = $0.action { return true }; return false }?.alternates.contains("⌄") == true)
         XCTAssertEqual(r.last!.first { $0.action == .space }?.label, "English")
     }
     func testNumberRowToggleAndGlobe() {

@@ -75,7 +75,11 @@ public final class InputController {
     }
 
     /// Inserts a long-press alternate / flick symbol, behaving like typing that character.
-    public func insertAlternate(_ s: String) { handle(.character(s)) }
+    /// The sentinel "⌄" is used by the "." key's long-press to trigger hideKeyboard.
+    public func insertAlternate(_ s: String) {
+        if s == "⌄" { onHide?(); return }
+        handle(.character(s))
+    }
 
     /// Drag on the space bar / trackpad: positive offset moves the cursor forward.
     public func moveCursor(by offset: Int) {
@@ -126,6 +130,8 @@ public final class InputController {
            ctx.hasSuffix(" "), let before = ctx.dropLast().last, Self.isWordChar(before) || ")\"”]".contains(before) {
             proxy.deleteBackward(); proxy.insertText(". ")
             lastWasSpace = false
+            // Explicitly update shift so auto-cap fires after the period we just inserted.
+            updateShiftFromContext(afterAction: .space)
             return
         }
         proxy.insertText(" ")

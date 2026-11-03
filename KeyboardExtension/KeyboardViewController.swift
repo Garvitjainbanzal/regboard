@@ -20,6 +20,10 @@ final class KeyboardViewController: UIInputViewController {
     private var heightConstraint: NSLayoutConstraint?
     private var settings = KeyboardSettings()
 
+    // Cache the last computed height so we only update the constraint when it
+    // actually changes — prevents repeated constraint churn on every keystroke.
+    private var lastComputedHeight: CGFloat = 0
+
     override func viewDidLoad() {
         super.viewDidLoad()
         settings = settingsStore.load()
@@ -34,14 +38,17 @@ final class KeyboardViewController: UIInputViewController {
         keyboardView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(keyboardView)
         NSLayoutConstraint.activate([
-            keyboardView.leadingAnchor.constraint(equalTo: view.leadingAnchor), keyboardView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            keyboardView.topAnchor.constraint(equalTo: view.topAnchor), keyboardView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            keyboardView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            keyboardView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            keyboardView.topAnchor.constraint(equalTo: view.topAnchor),
+            keyboardView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         keyboardView.onKey = { [weak self] def in self?.controller.handle(def.action) }
         keyboardView.onAlternate = { [weak self] s in self?.controller.insertAlternate(s) }
         keyboardView.onRepeatDelete = { [weak self] in self?.controller.repeatDelete() }
         keyboardView.onSpaceDrag = { [weak self] n in self?.controller.moveCursor(by: n) }
-        keyboardView.onSwipeDeleteWord = { [weak self] in self?.controller.deleteWord() }
+        keyboardView.onSwipeSelectChars = { [weak self] n in self?.textDocumentProxy.adjustTextPosition(byCharacterOffset: n) }
+        keyboardView.onCommitSwipeDelete = { [weak self] in self?.commitSwipeDelete() }
         keyboardView.onHaptic = { [weak self] in self?.haptic() }
         applyTraits(); applySettings()
         controller.beginEditing()
@@ -50,35 +57,65 @@ final class KeyboardViewController: UIInputViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         // Pick up changes made in the containing app.
-        settings = settingsStore.load(); applySettings(); applyTraits(); controller.beginEditing()
+        // isBeingPresented guard prevents a redundant beginEditing() on the very first appearance
+        // since viewDidLoad already called it. On subsequent appearances (switching back to this
+        // keyboard from another input mode) we do want to reset state.
+        settings = settingsStore.load(); applySettings(); applyTraits()
+        if !isBeingPresented { controller.beginEditing() }
     }
 
     override func updateViewConstraints() {
         super.updateViewConstraints()
-        let landscape = view.bounds.width > view.bounds.height
+        let h = targetHeight()
+        // Only touch the constraint when the value actually changes — avoids
+        // height flickering caused by repeated constraint invalidation.
+        guard h != lastComputedHeight else { return }
+        lastComputedHeight = h
+        if heightConstraint == nil {
+            let c = view.heightAnchor.constraint(equalToConstant: h)
+            c.priority = UILayoutPriority(999)
+            c.isActive = true
+            heightConstraint = c
+        } else {
+            heightConstraint?.constant = h
+        }
+    }
+
+    private func targetHeight() -> CGFloat {
+        // Use the screen width/height to determine orientation — view.bounds may
+        // not be valid yet when this is called early in the layout pass.
+        let screen = UIScreen.main.bounds
+        let landscape = screen.width > screen.height
         let base: CGFloat = landscape ? 190 : 260
         let rowsExtra: CGFloat = settings.showNumberRow ? 0 : -42
-        let h = (base + rowsExtra) * CGFloat(settings.heightScale)
-        if heightConstraint == nil {
-            let c = view.heightAnchor.constraint(equalToConstant: h); c.priority = UILayoutPriority(999); c.isActive = true; heightConstraint = c
-        } else { heightConstraint?.constant = h }
+        return (base + rowsExtra) * CGFloat(settings.heightScale)
     }
 
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
+        // Reset cached height on rotation so the constraint is recalculated.
+        lastComputedHeight = 0
         view.setNeedsUpdateConstraints()
     }
 
     override func textWillChange(_ textInput: UITextInput?) {}
     override func textDidChange(_ textInput: UITextInput?) {
-        applyTraits(); applySettings()   // appearance may flip (dark/light) and traits may change
+        // Only re-apply traits/appearance when something structural may have changed
+        // (return key type, secure flag, keyboard appearance). Avoid calling render()
+        // directly here — that happens inside applySettings → render(). To prevent a
+        // full key-row rebuild on every host-app keystroke (e.g. live-search fields),
+        // we check whether the derived traits or palette actually changed before doing work.
+        let newTraits = buildTraits()
+        let newPalette = ThemePalette.palette(mode: settings.themeMode, systemIsDark: systemIsDark())
+        guard newTraits != controller.traits || newPalette != keyboardView.palette else { return }
+        applyTraits(); applySettings()
     }
     override func traitCollectionDidChange(_ previous: UITraitCollection?) {
         super.traitCollectionDidChange(previous); applySettings()
     }
 
     // MARK: Configuration
-    private func applyTraits() {
+    private func buildTraits() -> KeyboardTraits {
         let p = textDocumentProxy
         var t = KeyboardTraits()
         switch p.autocapitalizationType ?? .sentences {
@@ -93,7 +130,11 @@ final class KeyboardViewController: UIInputViewController {
         case .done: t.returnKeyLabel = "done"; case .next: t.returnKeyLabel = "next"; case .join: t.returnKeyLabel = "join"
         case .route: t.returnKeyLabel = "route"; case .continue: t.returnKeyLabel = "continue"; default: t.returnKeyLabel = "return"
         }
-        controller.traits = t
+        return t
+    }
+
+    private func applyTraits() {
+        controller.traits = buildTraits()
         controller.needsGlobe = needsInputModeSwitchKey
     }
 
@@ -111,13 +152,18 @@ final class KeyboardViewController: UIInputViewController {
         keyboardView.accent = AccentColor.named(settings.accentID).color.ui
         keyboardView.palette = pal
         emojiPanel?.palette = pal
-        view.setNeedsUpdateConstraints()
+        // Only trigger a constraint update when the target height has actually changed,
+        // not on every keystroke. render() handles the key-row update separately.
+        let newH = targetHeight()
+        if newH != lastComputedHeight { view.setNeedsUpdateConstraints() }
         render()
     }
 
     private func render() {
         keyboardView.setRows(controller.layoutRows, shift: controller.shift)
-        keyboardView.setNeedsLayout()
+        // setNeedsLayout is only needed when the rows actually changed (KeyboardView
+        // handles that internally). Calling it unconditionally here causes an extra
+        // layout pass on every keystroke, contributing to input lag.
     }
 
     // MARK: Haptics (UIKit feedback generators require Full Access in extensions)
@@ -125,6 +171,25 @@ final class KeyboardViewController: UIInputViewController {
     private func haptic() {
         guard settings.hapticsEnabled, hasFullAccess else { return }
         impact.impactOccurred()
+    }
+
+    // MARK: Swipe-delete
+    /// Called when the user lifts their finger after a swipe-left on backspace.
+    /// At this point the proxy has moved the cursor left by N characters (which
+    /// shows a selection in the host app). We delete backward once per selected
+    /// character, then let the InputController sync shift state.
+    private func commitSwipeDelete() {
+        // UITextDocumentProxy exposes `selectedText` when text is selected.
+        // We delete the selection by calling deleteBackward() once — on iOS 16+
+        // with a selection active this removes the whole selection in one call.
+        // On older OS versions it may only remove one character, so we call
+        // controller.deleteWord() as a fallback which also cleans up shift state.
+        if let sel = textDocumentProxy.selectedText, !sel.isEmpty {
+            textDocumentProxy.deleteBackward()
+        } else {
+            controller.deleteWord()
+        }
+        controller.textContextChanged()
     }
 
     // MARK: Emoji
@@ -137,8 +202,12 @@ final class KeyboardViewController: UIInputViewController {
         panel.onDelete = { [weak self] in self?.textDocumentProxy.deleteBackward() }
         panel.onBack = { [weak self] in self?.hideEmoji() }
         view.addSubview(panel)
-        NSLayoutConstraint.activate([panel.leadingAnchor.constraint(equalTo: view.leadingAnchor), panel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-                                     panel.topAnchor.constraint(equalTo: view.topAnchor), panel.bottomAnchor.constraint(equalTo: view.bottomAnchor)])
+        NSLayoutConstraint.activate([
+            panel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            panel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            panel.topAnchor.constraint(equalTo: view.topAnchor),
+            panel.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
         emojiPanel = panel
     }
     private func hideEmoji() { emojiPanel?.removeFromSuperview(); emojiPanel = nil; render() }
