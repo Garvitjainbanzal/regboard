@@ -120,24 +120,26 @@ public enum KeyboardLayouts {
             rows.append([KeyDef(.switchToNumbers, label: "123", widthWeight: 1.5)] + ["%", "©", "®", "™", "[", "]", "<"].map { KeyDef(.character($0), label: $0, alternates: numberAlternates[$0] ?? []) } + [KeyDef(.backspace, label: "⌫", widthWeight: 1.5)])
         }
         var bottom: [KeyDef] = []
-        let spaceName = language.spaceLabel
-        let ret = KeyDef(.returnKey, label: returnLabel, pill: true, widthWeight: 1.8)
+        let ret = KeyDef(.returnKey, label: returnLabel, widthWeight: 2.0)
         if page == .letters {
-            bottom.append(KeyDef(.switchToNumbers, label: "123", widthWeight: 1.3))
+            // Bottom row matches the iOS system keyboard layout:
+            //   123  |  emoji  |  space (dominant)  |  return
+            // No "." key — period is on the numbers page and via long-press.
+            // No separate hide key — it's in the "." long-press on numbers page.
+            bottom.append(KeyDef(.switchToNumbers, label: "123", widthWeight: 1.4))
             if needsGlobe { bottom.append(KeyDef(.nextKeyboard, label: "🌐", widthWeight: 1.0)) }
-            bottom.append(KeyDef(.emoji, label: "☺︎", widthWeight: 0.85))
-            let spaceWeight: Double = needsGlobe ? 4.6 : 5.6
-            bottom.append(KeyDef(.space, label: spaceName, widthWeight: spaceWeight))
-            // "." key: tap types a period; long-press shows "…  ,  ?  !  ⌄" —
-            // the ⌄ sentinel is intercepted by InputController.insertAlternate to hide the keyboard.
-            bottom.append(KeyDef(.character("."), label: ".", alternates: ["…", ",", "?", "!", "⌄"], widthWeight: 0.95))
+            bottom.append(KeyDef(.emoji, label: "☺", widthWeight: 1.0))
+            let spaceWeight: Double = needsGlobe ? 4.2 : 5.2
+            // Space bar shows "space" to match the iOS system keyboard label.
+            bottom.append(KeyDef(.space, label: "space", widthWeight: spaceWeight))
         } else {
-            // Number / symbol panel: ABC (round) · , · space-with-language-label (+ "1 2 3 4" badge) · . · enter
-            bottom.append(KeyDef(.switchToLetters, label: "ABC", pill: true, widthWeight: 1.4))
+            bottom.append(KeyDef(.switchToLetters, label: "ABC", widthWeight: 1.4))
             if needsGlobe { bottom.append(KeyDef(.nextKeyboard, label: "🌐", widthWeight: 0.9)) }
             bottom.append(KeyDef(.character(","), label: ",", widthWeight: 0.8))
-            bottom.append(KeyDef(.space, label: spaceName, badge: "1 2\n3 4", widthWeight: needsGlobe ? 3.4 : 4.4))
-            bottom.append(KeyDef(.character("."), label: ".", alternates: numberAlternates["."] ?? [], widthWeight: 0.8))
+            bottom.append(KeyDef(.space, label: "space", badge: "1 2\n3 4",
+                                 widthWeight: needsGlobe ? 3.4 : 4.4))
+            bottom.append(KeyDef(.character("."), label: ".",
+                                 alternates: numberAlternates["."] ?? [], widthWeight: 0.8))
         }
         bottom.append(ret)
         rows.append(bottom)

@@ -23,9 +23,9 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
     private var shift: ShiftState = .off
     var oneHanded: Handedness = .off { didSet { setNeedsLayout() } }
 
-    private let rowSpacing: CGFloat = 12
-    private let keySpacing: CGFloat = 6
-    private let inset: CGFloat = 4
+    private let rowSpacing: CGFloat = 11   // vertical gap between rows
+    private let keySpacing: CGFloat = 5    // horizontal gap between keys
+    private let inset: CGFloat = 3         // left/right edge margin
 
     // Tracks whether shift is physically down for shift+space selection trackpad.
     private var shiftIsHeld = false
@@ -89,9 +89,25 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
 
     func restyle() {
         backgroundColor = palette.background.ui
-        keyViews.flatMap { $0 }.forEach {
-            $0.palette = palette; $0.accent = accent
-            $0.soundEnabled = soundEnabled; $0.longPressDelay = longPressDelay
+        let isDark = palette == .dark
+        keyViews.flatMap { $0 }.forEach { k in
+            k.palette = palette; k.accent = accent
+            k.soundEnabled = soundEnabled; k.longPressDelay = longPressDelay
+            // iOS system keyboard: letter keys have a 1pt bottom shadow in light mode only.
+            let isCharKey: Bool
+            if case .character = k.def.action { isCharKey = true }
+            else if k.def.action == .space    { isCharKey = true }
+            else                               { isCharKey = false }
+            if !isDark && isCharKey {
+                k.layer.masksToBounds = false
+                k.layer.shadowColor   = UIColor(white: 0, alpha: 1).cgColor
+                k.layer.shadowOpacity = 0.3
+                k.layer.shadowRadius  = 0
+                k.layer.shadowOffset  = CGSize(width: 0, height: 1)
+            } else {
+                k.layer.masksToBounds = true
+                k.layer.shadowOpacity = 0
+            }
         }
     }
 
@@ -115,7 +131,7 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
         guard !rows.isEmpty else { return }
 
         let topInset: CGFloat = 8
-        let bottomInset: CGFloat = 4
+        let bottomInset: CGFloat = 6
         let usableH = rowsContainer.bounds.height - topInset - bottomInset
         let totalSpacing = rowSpacing * CGFloat(rows.count - 1)
         let rowH = (usableH - totalSpacing) / CGFloat(rows.count)

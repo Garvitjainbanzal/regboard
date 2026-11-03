@@ -78,7 +78,6 @@ final class InputControllerTests: XCTestCase {
         XCTAssertTrue(hidden)
         XCTAssertTrue(proxy.text.isEmpty, "Sentinel should not be typed as a character")
     }
-
     // 1. Double-space full stop (toggle)
     func testDoubleSpacePeriodOn() {
         type("hello"); ctl.handle(.space); tick(0.2); ctl.handle(.space); XCTAssertEqual(proxy.text, "hello. ")
@@ -138,10 +137,13 @@ final class LayoutTests: XCTestCase {
         let r = rows()
         XCTAssertEqual(r.count, 5); XCTAssertEqual(r[1].count, 10); XCTAssertEqual(r[2].count, 9); XCTAssertEqual(r[3].count, 9)
         XCTAssertEqual(r.last!.first!.action, .switchToNumbers)
-        // Hide keyboard is now accessed via long-press on "." (sentinel "⌄" alternate), not a dedicated key.
+        // Bottom row: 123 | globe | emoji | space | return  (no dedicated "." or hideKeyboard key)
         XCTAssertFalse(r.last!.contains { $0.action == .hideKeyboard })
-        XCTAssertTrue(r.last!.first { if case .character(".") = $0.action { return true }; return false }?.alternates.contains("⌄") == true)
-        XCTAssertEqual(r.last!.first { $0.action == .space }?.label, "English")
+        XCTAssertFalse(r.last!.contains { if case .character(".") = $0.action { return true }; return false })
+        // Space label is now "space" to match the iOS system keyboard
+        XCTAssertEqual(r.last!.first { $0.action == .space }?.label, "space")
+        XCTAssertTrue(r.last!.contains { $0.action == .emoji })
+        XCTAssertEqual(r.last!.last?.action, .returnKey)
     }
     func testNumberRowToggleAndGlobe() {
         let r = rows(numRow: false, globe: false)
