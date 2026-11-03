@@ -6,13 +6,13 @@ name: CI
 #                        with the unsigned IPA so SideStore can pick it up.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    # Ignore documentation-only or workflow-only changes to save runner minutes.
-    paths-ignore:
-      - 'docs/**'
-      - '**.md'
-      - '.gitignore'
+  # push:
+  #   branches: [main]
+  #   # Ignore documentation-only or workflow-only changes to save runner minutes.
+  #   paths-ignore:
+  #     - 'docs/**'
+  #     - '**.md'
+  #     - '.gitignore'
 
 concurrency:
   group: ci-${{ github.ref }}
