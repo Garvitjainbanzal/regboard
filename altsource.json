@@ -1,7 +1,7 @@
 {
   "name": "RegBoard",
   "identifier": "com.regboard.source",
-  "sourceURL": "https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/regboard/main/altsource.json",
+  "sourceURL": "https://raw.githubusercontent.com/Garvitjainbanzal/regboard/main/altsource.json",
   "apps": [
     {
       "name": "RegBoard",
@@ -9,14 +9,14 @@
       "developerName": "RegBoard",
       "subtitle": "Gboard-style iOS keyboard",
       "localizedDescription": "RegBoard is an open-source iOS keyboard extension with dynamic tap zones, bigram-based key prediction, swipe-delete, and shift+space text selection.",
-      "iconURL": "https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/regboard/main/docs/icon.png",
+      "iconURL": "https://raw.githubusercontent.com/Garvitjainbanzal/regboard/main/docs/icon.png",
       "tintColor": "1A73E8",
       "screenshotURLs": [],
       "versions": [
         {
           "version": "1.0",
           "date": "2026-11-03T00:00:00Z",
-          "downloadURL": "https://github.com/YOUR_GITHUB_USERNAME/regboard/releases/latest/download/RegBoard-unsigned.ipa",
+          "downloadURL": "https://github.com/Garvitjainbanzal/regboard/releases/latest/download/RegBoard-unsigned.ipa",
           "localizedDescription": "Initial release",
           "minOSVersion": "16.0"
         }
