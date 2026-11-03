@@ -43,7 +43,18 @@ final class KeyboardViewController: UIInputViewController {
             keyboardView.topAnchor.constraint(equalTo: view.topAnchor),
             keyboardView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
-        keyboardView.onKey = { [weak self] def in self?.controller.handle(def.action) }
+        keyboardView.onKey = { [weak self] def in
+            self?.controller.handle(def.action)
+            // Feed the bigram engine: record the letter just typed so the next
+            // touch gets appropriately expanded hitboxes for likely following chars.
+            if case .character(let s) = def.action, let ch = s.lowercased().first, ch.isLetter {
+                self?.keyboardView.lastTypedLetter = ch
+            } else if case .space = def.action {
+                // After a space we're at a word boundary — clear the bigram context
+                // so the first letter of the new word gets neutral hitboxes.
+                self?.keyboardView.lastTypedLetter = nil
+            }
+        }
         keyboardView.onAlternate = { [weak self] s in self?.controller.insertAlternate(s) }
         keyboardView.onRepeatDelete = { [weak self] in self?.controller.repeatDelete() }
         keyboardView.onSpaceDrag = { [weak self] n in self?.controller.moveCursor(by: n) }
@@ -61,7 +72,7 @@ final class KeyboardViewController: UIInputViewController {
         // since viewDidLoad already called it. On subsequent appearances (switching back to this
         // keyboard from another input mode) we do want to reset state.
         settings = settingsStore.load(); applySettings(); applyTraits()
-        if !isBeingPresented { controller.beginEditing() }
+        if !isBeingPresented { controller.beginEditing(); keyboardView.lastTypedLetter = nil }
     }
 
     override func updateViewConstraints() {

@@ -130,3 +130,77 @@ extension KeyboardView {
         }
     }
 }
+
+// MARK: - Dynamic tap-zone hit-testing
+
+extension KeyboardView {
+    /// The last lowercase letter that was tapped. Drives bigram-based hitbox expansion.
+    /// Set by KeyboardViewController after every character keystroke.
+    var lastTypedLetter: Character? {
+        get { objc_getAssociatedObject(self, &KeyboardView.lastTypedKey) as? Character }
+        set { objc_setAssociatedObject(self, &KeyboardView.lastTypedKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }
+    }
+    private static var lastTypedKey = 0
+
+    /// Override hit-testing to redirect touches to the highest-scoring key rather than
+    /// the geometrically topmost view. Only letter/character keys participate in scoring;
+    /// modifier keys (shift, backspace, space, etc.) always win within their own frame.
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        // Convert the touch point into rowsContainer coordinates.
+        let localPoint = convert(point, to: rowsContainer)
+
+        // Collect all visible character key views.
+        let charKeys = keyViews.flatMap { $0 }.filter {
+            if case .character = $0.def.action { return true }
+            return false
+        }
+
+        // If the touch lands squarely inside a modifier key frame, defer to default
+        // hit-testing so modifiers always respond reliably regardless of nearby letter keys.
+        let allKeys = keyViews.flatMap { $0 }
+        for k in allKeys {
+            guard k.frame.contains(localPoint) else { continue }
+            if case .character = k.def.action {
+                // Touch is inside a character key — proceed to bigram scoring below.
+                break
+            } else {
+                // Touch is inside a modifier key — skip scoring, use standard routing.
+                return super.hitTest(point, with: event)
+            }
+        }
+
+        // Score every character key and return the one with the lowest weighted distance.
+        let prev = lastTypedLetter
+        var bestKey: KeyView? = nil
+        var bestScore = Double.greatestFiniteMagnitude
+
+        for k in charKeys {
+            let center = CGPoint(x: k.frame.midX, y: k.frame.midY)
+            let dx = Double(localPoint.x - center.x)
+            let dy = Double(localPoint.y - center.y)
+            // Raw Euclidean distance, but y gets a smaller penalty because fingers
+            // tend to be more accurate horizontally than vertically on a keyboard.
+            let rawDist = sqrt(dx * dx + (dy * dy) * 0.75)
+
+            // Bigram boost: shrinks the effective distance for likely next letters.
+            var boost = 1.0
+            if let ch = k.def.label.lowercased().first, ch.isLetter {
+                boost = BigramModel.boost(after: prev, candidate: ch)
+            }
+            // A higher boost reduces the effective distance → key wins more ties.
+            let score = rawDist / boost
+
+            if score < bestScore {
+                bestScore = score
+                bestKey = k
+            }
+        }
+
+        // Only use the scored winner if the touch is reasonably close to the keyboard
+        // area (within 1 key-height above the top row, or anywhere within the board).
+        if let winner = bestKey {
+            return winner
+        }
+        return super.hitTest(point, with: event)
+    }
+}

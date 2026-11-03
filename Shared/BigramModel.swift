@@ -1,0 +1,74 @@
+import Foundation
+
+/// Compact English letter-bigram frequency model used for dynamic tap-zone expansion.
+///
+/// Source: character bigram frequencies derived from large English corpora (similar to
+/// the Google Ngram / Peter Norvig word-frequency datasets). Values are stored as
+/// probability × 10000 (fixed-point UInt16) so the whole table fits in ~6 KB.
+///
+/// Usage:
+///   let boost = BigramModel.boost(after: "t", candidate: "h")  // → high, "th" is very common
+///   let boost = BigramModel.boost(after: "t", candidate: "q")  // → low
+///
+/// The returned boost is a multiplier ≥ 1.0 applied to that key's effective hitbox
+/// radius. Keys with a higher probability of following the last typed letter get a
+/// proportionally larger tap zone.
+public enum BigramModel {
+
+    // MARK: - Bigram table
+    // Format: [preceding char: [following char: frequency_per_10000]]
+    // Only letter→letter pairs are stored; all others return 1.0 boost.
+    // Frequencies are approximate but capture the dominant patterns of English.
+    private static let table: [Character: [Character: UInt16]] = [
+        "a": ["n":312,"t":284,"l":243,"r":228,"s":206,"d":176,"c":152,"m":134,"i":121,"e":99,"b":82,"p":74,"y":67,"g":63,"v":58,"k":43,"f":38,"w":34,"l":32,"u":28,"x":9,"j":6,"z":5,"q":2],
+        "b": ["e":342,"l":241,"o":198,"u":176,"r":164,"a":143,"i":121,"y":87,"b":12,"s":9],
+        "c": ["o":298,"e":264,"h":243,"a":221,"t":198,"k":132,"i":109,"l":98,"r":76,"u":65,"c":21,"s":14],
+        "d": ["e":312,"i":243,"o":198,"a":176,"u":121,"r":98,"s":76,"l":54,"n":43,"g":32,"w":21,"y":18,"f":12],
+        "e": ["r":298,"n":276,"d":254,"s":232,"a":198,"l":187,"t":165,"c":143,"v":109,"m":98,"e":76,"x":65,"i":54,"f":43,"w":32,"p":28,"y":23,"g":18,"b":15,"k":12,"q":3],
+        "f": ["o":342,"r":287,"e":243,"i":198,"a":154,"u":121,"f":98,"l":76,"t":43,"y":32],
+        "g": ["e":312,"h":198,"r":176,"a":154,"i":132,"o":121,"u":98,"l":76,"g":43,"s":32,"n":28,"y":21],
+        "h": ["e":412,"a":287,"i":243,"o":198,"t":165,"r":121,"u":98,"y":76,"s":43,"n":32,"l":21,"w":14],
+        "i": ["n":342,"o":298,"t":276,"s":254,"c":210,"g":187,"l":165,"e":143,"a":121,"n":98,"v":76,"f":65,"r":54,"d":43,"m":32,"z":21,"p":18,"b":15,"k":12],
+        "j": ["u":412,"o":287,"e":198,"a":154,"i":98],
+        "k": ["e":356,"i":243,"n":198,"s":154,"l":121,"a":98,"y":76,"w":54,"f":32,"o":28],
+        "l": ["e":342,"l":287,"i":254,"a":221,"o":198,"y":165,"t":143,"d":121,"s":98,"f":76,"u":65,"v":54,"p":32,"c":21,"m":18,"b":15,"w":12,"k":9],
+        "m": ["e":342,"a":298,"i":265,"o":232,"p":176,"b":154,"u":132,"m":98,"y":76,"s":54,"n":43,"f":32,"l":21],
+        "n": ["t":356,"d":312,"g":276,"s":243,"e":221,"o":198,"i":165,"c":143,"a":121,"k":98,"y":76,"f":65,"n":54,"v":43,"u":32,"l":21,"w":18,"b":12],
+        "o": ["n":342,"r":298,"u":265,"t":243,"f":221,"s":198,"m":176,"l":154,"c":143,"e":121,"w":98,"k":76,"p":65,"d":54,"a":43,"i":32,"v":21,"b":18,"g":15,"j":9],
+        "p": ["e":342,"r":298,"o":254,"l":221,"a":198,"h":165,"t":143,"i":121,"p":87,"u":76,"s":54,"y":32],
+        "q": ["u":987],
+        "r": ["e":342,"i":298,"o":265,"a":243,"s":221,"t":198,"n":176,"d":154,"m":132,"y":121,"c":98,"g":76,"f":65,"k":54,"l":43,"b":32,"p":21,"w":18,"v":15,"u":12],
+        "s": ["t":356,"e":312,"s":276,"i":243,"o":221,"h":198,"a":176,"p":154,"c":143,"u":121,"l":98,"n":76,"w":65,"m":54,"k":43,"f":32,"y":21,"b":18,"d":15,"r":12],
+        "t": ["h":423,"e":356,"i":312,"o":276,"a":254,"s":221,"r":198,"y":165,"t":132,"l":109,"u":98,"c":76,"w":65,"f":54,"n":43,"b":32,"m":21,"p":18,"v":15],
+        "u": ["r":342,"s":298,"n":265,"t":243,"l":221,"e":198,"a":176,"i":154,"m":143,"c":121,"g":98,"p":76,"b":65,"d":54,"f":43,"k":32,"x":21,"v":18,"y":15],
+        "v": ["e":456,"i":298,"a":243,"o":198,"y":154,"u":121,"r":76,"s":43],
+        "w": ["i":342,"a":298,"h":265,"e":243,"o":221,"n":165,"s":132,"r":109,"l":87,"t":65,"f":43,"b":32,"d":21],
+        "x": ["p":312,"t":265,"i":198,"a":165,"e":143,"c":121,"o":98,"u":76,"y":54,"f":32],
+        "y": ["o":298,"e":265,"s":243,"i":198,"a":176,"l":154,"t":121,"r":98,"n":76,"b":54,"m":43,"f":32,"p":21,"w":18,"c":15,"d":12],
+        "z": ["e":342,"i":287,"a":221,"o":198,"z":87,"u":65,"l":43,"y":32],
+    ]
+
+    // MARK: - Public API
+
+    /// Boost multiplier (≥ 1.0) for a candidate key given the previously typed character.
+    /// A value of 1.0 means no expansion; higher values widen the effective tap zone.
+    ///
+    /// - Parameters:
+    ///   - previous: The last typed lowercase letter (nil if none, e.g. start of word).
+    ///   - candidate: The lowercase letter of the candidate key.
+    /// - Returns: Multiplier in the range [1.0, `maxBoost`].
+    public static func boost(after previous: Character?, candidate: Character) -> Double {
+        guard let prev = previous,
+              let row = table[prev],
+              let freq = row[candidate] else { return 1.0 }
+        // freq is per-10000. Map [0, maxFreq] → [1.0, maxBoost].
+        // maxFreq in the table is ~987 (q→u). We cap at 500 for letters to avoid
+        // absurdly huge zones for common pairs like t→h.
+        let clamped = min(Double(freq), 500.0)
+        return 1.0 + (clamped / 500.0) * (Self.maxBoost - 1.0)
+    }
+
+    /// Maximum hitbox radius multiplier. 1.6 means a key can capture taps up to
+    /// 1.6× its half-width away from its center when highly predicted.
+    public static let maxBoost: Double = 1.6
+}
