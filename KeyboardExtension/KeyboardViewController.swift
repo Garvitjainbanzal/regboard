@@ -60,6 +60,7 @@ final class KeyboardViewController: UIInputViewController {
         keyboardView.onSpaceDrag = { [weak self] n in self?.controller.moveCursor(by: n) }
         keyboardView.onSwipeSelectChars = { [weak self] n in self?.textDocumentProxy.adjustTextPosition(byCharacterOffset: n) }
         keyboardView.onCommitSwipeDelete = { [weak self] in self?.commitSwipeDelete() }
+        keyboardView.onSelectDrag = { [weak self] n in self?.extendSelection(by: n) }
         keyboardView.onHaptic = { [weak self] in self?.haptic() }
         applyTraits(); applySettings()
         controller.beginEditing()
@@ -201,6 +202,15 @@ final class KeyboardViewController: UIInputViewController {
             controller.deleteWord()
         }
         controller.textContextChanged()
+    }
+
+    // MARK: Shift+space selection trackpad
+    /// Extends or shrinks the text selection by moving the active selection end.
+    /// `adjustTextPosition` on iOS begins a selection from the caret when called
+    /// the first time, then extends it on subsequent calls. Positive = forward.
+    private func extendSelection(by offset: Int) {
+        guard offset != 0 else { return }
+        textDocumentProxy.adjustTextPosition(byCharacterOffset: offset)
     }
 
     // MARK: Emoji
