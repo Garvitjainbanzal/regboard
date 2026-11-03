@@ -13,11 +13,8 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
     var onRepeatDelete: (() -> Void)?
     var onSpaceDrag: ((Int) -> Void)?
     var onHaptic: (() -> Void)?
-    /// Backspace swipe: incremental cursor-position delta to show live selection.
     var onSwipeSelectChars: ((Int) -> Void)?
-    /// Backspace swipe commit: delete the current selection.
     var onCommitSwipeDelete: (() -> Void)?
-    /// Shift+space selection trackpad: cumulative character offset (positive = forward).
     var onSelectDrag: ((Int) -> Void)?
 
     private let rowsContainer = UIView()
@@ -26,14 +23,17 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
     private var shift: ShiftState = .off
     var oneHanded: Handedness = .off { didSet { setNeedsLayout() } }
 
-    // iOS system keyboard metrics
     private let rowSpacing: CGFloat = 12
     private let keySpacing: CGFloat = 6
     private let inset: CGFloat = 4
 
-    // Tracks whether the shift key is currently being held (finger down).
-    // Used to immediately enter selection-trackpad on a simultaneous space touch.
+    // Tracks whether shift is physically down for shift+space selection trackpad.
     private var shiftIsHeld = false
+
+    // Tracks UITouch objects currently active on modifier keys.
+    // Using a Set<ObjectIdentifier> (wrapping the touch pointer) avoids retaining
+    // UITouch objects and is safe from the asyncAfter race that previously crashed.
+    private var activeModifierTouchIDs = Set<ObjectIdentifier>()
 
     init() {
         super.init(frame: .zero, inputViewStyle: .keyboard)
@@ -60,7 +60,6 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
     private func makeKey(_ d: KeyDef) -> KeyView {
         let k = KeyView(def: d, palette: palette, accent: accent)
         k.soundEnabled = soundEnabled; k.longPressDelay = longPressDelay
-
         switch d.action {
         case .shift:
             k.onTap = { [weak self] key in
@@ -74,7 +73,6 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
         default:
             k.onTap = { [weak self] in self?.onKey?($0) }
         }
-
         k.onAlternate = { [weak self] in self?.onAlternate?($0) }
         k.onRepeat = { [weak self] in self?.onRepeatDelete?() }
         k.onSpaceDrag = { [weak self] in self?.onSpaceDrag?($0) }
@@ -104,6 +102,8 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
             }
         }
     }
+
+    // MARK: - Layout
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -139,21 +139,26 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
             }
         }
     }
-}
 
-// MARK: - Trackpad / selection trackpad dimming
+    // MARK: - Trackpad dimming
 
-extension KeyboardView {
     func setTrackpad(_ on: Bool) {
         UIView.animate(withDuration: 0.12) {
             self.keyViews.flatMap { $0 }.filter { $0.def.action != .space }.forEach { $0.alpha = on ? 0.45 : 1 }
         }
     }
-}
 
-// MARK: - Dynamic tap-zone hit-testing
+    // MARK: - Touch tracking for modifier-touch suppression
 
-extension KeyboardView {
+    /// Keep the active-modifier set in sync by observing every touch event that
+    /// passes through this view. This is called by UIKit before hitTest on each
+    /// touch event, so it is always up to date.
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesBegan(touches, with: event)
+    }
+
+    // MARK: - Dynamic tap-zone hit-testing
+
     /// The last lowercase letter that was tapped. Drives bigram-based hitbox expansion.
     var lastTypedLetter: Character? {
         get { objc_getAssociatedObject(self, &KeyboardView.lastTypedKey) as? Character }
@@ -161,70 +166,74 @@ extension KeyboardView {
     }
     private static var lastTypedKey = 0
 
-    /// Tracks how many touches are currently active on non-character (modifier) keys.
-    /// When non-zero the bigram scoring is suppressed, protecting mid-gesture swipes
-    /// on backspace / space from being hijacked to a letter key.
-    private var activeModifierTouches: Int {
-        get { (objc_getAssociatedObject(self, &KeyboardView.activeModifierKey) as? Int) ?? 0 }
-        set { objc_setAssociatedObject(self, &KeyboardView.activeModifierKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }
-    }
-    private static var activeModifierKey = 0
-
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        let localPoint = convert(point, to: rowsContainer)
+        // Guard: only process touches that are actually within our bounds.
+        guard bounds.contains(point), !isHidden, alpha > 0.01, isUserInteractionEnabled else {
+            return nil
+        }
 
-        // Determine what key the point lands inside geometrically.
+        // Update active-modifier-touch tracking from the live event.
+        // UIKit passes the current UIEvent to hitTest; its allTouches set reflects
+        // exactly which touches are on-screen right now. We use ObjectIdentifier(touch)
+        // as a stable pointer-based key so we never retain the UITouch itself.
+        if let event = event {
+            let liveTouchIDs = Set((event.allTouches ?? []).map { ObjectIdentifier($0) })
+            // Remove any IDs that are no longer live (touch ended / cancelled).
+            activeModifierTouchIDs.formIntersection(liveTouchIDs)
+        }
+
+        let localPoint = convert(point, to: rowsContainer)
         let allKeys = keyViews.flatMap { $0 }
 
-        // Check if we're inside a modifier key frame first.
+        // --- Step 1: Find the geometrically hit key (if any) ---
+        var hitCharKey: KeyView? = nil
+        var hitModifierKey: KeyView? = nil
         for k in allKeys {
             guard k.frame.contains(localPoint) else { continue }
             if case .character = k.def.action {
-                // Inside a character key — fall through to bigram scoring.
-                break
+                hitCharKey = k
             } else {
-                // Inside a modifier key.
-                // Track shift being held for shift+space detection.
-                if k.def.action == .shift {
-                    shiftIsHeld = true
-                    // Will be cleared when shift key fires onTap or onShiftRelease.
-                }
-                // Suppress bigram scoring for as long as this touch is active.
-                // UIKit calls hitTest once per touch-begin event; we mark that a
-                // modifier touch is in flight so subsequent scoring passes are skipped.
-                activeModifierTouches += 1
-                // Schedule a cleanup after a short delay since there's no touch-end
-                // callback at this level (UIView.hitTest has no paired "end").
-                // We use a weak reference to avoid a retain cycle.
-                let weakSelf = self
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                    weakSelf.activeModifierTouches = max(0, weakSelf.activeModifierTouches - 1)
-                }
-                return super.hitTest(point, with: event)
+                hitModifierKey = k
             }
+            break  // frames don't overlap; first match is the answer
         }
 
-        // If any modifier touch is currently active (e.g. finger sliding off backspace
-        // onto the letter rows), skip bigram scoring entirely and use standard hit-test.
-        // This prevents the swipe-left gesture from being stolen mid-slide.
-        if activeModifierTouches > 0 {
-            return super.hitTest(point, with: event)
+        // --- Step 2: If a modifier key was directly hit, register it and return it ---
+        if let modKey = hitModifierKey {
+            if let event = event {
+                for touch in event.allTouches ?? [] {
+                    // A touch in .began phase that lands on this modifier key gets registered.
+                    if touch.phase == .began {
+                        activeModifierTouchIDs.insert(ObjectIdentifier(touch))
+                    }
+                }
+            }
+            if modKey.def.action == .shift { shiftIsHeld = true }
+            return modKey
         }
 
-        // Bigram scoring: find the character key with the lowest weighted distance.
+        // --- Step 3: If any modifier touch is still live, bypass bigram scoring ---
+        // This ensures a swipe that started on backspace/space is never stolen.
+        if !activeModifierTouchIDs.isEmpty {
+            // Return the geometrically hit character key if there is one,
+            // otherwise let the touch go to whatever super finds.
+            return hitCharKey ?? super.hitTest(point, with: event)
+        }
+
+        // --- Step 4: No modifier touches active — apply bigram scoring ---
         let charKeys = allKeys.filter { if case .character = $0.def.action { return true }; return false }
+        guard !charKeys.isEmpty else { return hitCharKey ?? super.hitTest(point, with: event) }
+
         let prev = lastTypedLetter
         var bestKey: KeyView? = nil
         var bestScore = Double.greatestFiniteMagnitude
 
         for k in charKeys {
-            // Also tell the space key whether shift is held before touch begins.
             if k.def.action == .space { k.shiftHeld = shiftIsHeld }
-
             let center = CGPoint(x: k.frame.midX, y: k.frame.midY)
             let dx = Double(localPoint.x - center.x)
             let dy = Double(localPoint.y - center.y)
-            let rawDist = sqrt(dx * dx + dy * dy * 0.75)
+            let rawDist = (dx * dx + dy * dy * 0.75).squareRoot()
             var boost = 1.0
             if let ch = k.def.label.lowercased().first, ch.isLetter {
                 boost = BigramModel.boost(after: prev, candidate: ch)
@@ -233,7 +242,10 @@ extension KeyboardView {
             if score < bestScore { bestScore = score; bestKey = k }
         }
 
-        if let winner = bestKey { return winner }
+        // Only redirect to the scored winner when the touch is within the keyboard area.
+        // If the touch is far outside all keys (e.g. above the top row), fall back to
+        // standard hit-testing so other subviews (popover, preview) can receive it.
+        if let winner = bestKey, bestScore < 200 { return winner }
         return super.hitTest(point, with: event)
     }
 }
