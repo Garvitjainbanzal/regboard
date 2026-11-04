@@ -109,17 +109,16 @@ jobs:
           VER:  ${{ steps.ver.outputs.version }}
           DATE: ${{ steps.ver.outputs.build_date }}
         run: |
-          # The download URL GitHub uses for Release assets:
-          IPA_URL="https://github.com/${REPO}/releases/download/${TAG}/RegBoard-unsigned.ipa"
-
           python3 - <<PYEOF
           import json, os
 
-          ipa_url  = os.environ["IPA_URL"]
-          tag      = os.environ["TAG"]
-          version  = os.environ["VER"]
-          date     = os.environ["DATE"]
-          repo     = os.environ["REPO"]
+          repo    = os.environ["REPO"]
+          tag     = os.environ["TAG"]
+          version = os.environ["VER"]
+          date    = os.environ["DATE"]
+          # Build the IPA URL directly in Python — shell variables aren't
+          # visible to the heredoc subprocess via os.environ.
+          ipa_url = f"https://github.com/{repo}/releases/download/{tag}/RegBoard-unsigned.ipa"
 
           source = {
             "name": "RegBoard",
