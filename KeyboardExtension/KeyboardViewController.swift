@@ -91,15 +91,19 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func targetHeight() -> CGFloat {
-        // Derive orientation from the view's own trait collection when available,
-        // falling back to the window scene. UIScreen.main is deprecated on iOS 16+.
+        // Determine orientation without UIApplication.shared (unavailable in extensions).
+        // view.bounds is valid after the first layout pass. Before that, fall back to
+        // the window scene via view.window — also extension-safe.
         let landscape: Bool
         if view.bounds.width > 0 {
             landscape = view.bounds.width > view.bounds.height
+        } else if let scene = view.window?.windowScene {
+            let size = scene.coordinateSpace.bounds.size
+            landscape = size.width > size.height
         } else {
-            let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-            let screenSize = scenes.first?.coordinateSpace.bounds.size ?? CGSize(width: 390, height: 844)
-            landscape = screenSize.width > screenSize.height
+            // Last resort before the first layout: use the trait collection horizontal
+            // size class as a coarse proxy. Compact = portrait on iPhone.
+            landscape = traitCollection.verticalSizeClass == .compact
         }
         let base: CGFloat = landscape ? 190 : 260
         let rowsExtra: CGFloat = settings.showNumberRow ? 0 : -42
