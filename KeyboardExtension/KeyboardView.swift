@@ -18,6 +18,9 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
     var onSwipeSelectChars: ((Int) -> Void)?
     /// Called when the swipe-left-on-backspace gesture ends — delete the selection.
     var onCommitSwipeDelete: (() -> Void)?
+    /// Dynamic tap zones: on/off, and the letter typed just before the touch (nil = none / not a letter).
+    var dynamicTapZones = true
+    var previousLetter: (() -> Character?)?
 
     private let rowsContainer = UIView()
     private var rows: [[KeyDef]] = []
@@ -80,6 +83,29 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
         for k in keyViews.flatMap({ $0 }) {
             if case .character(let s) = k.def.action, k.convert(k.bounds, to: nil).contains(p) { onAlternate?(s.uppercased()); return }
         }
+    }
+        /// Chooses the key for a touch using adaptive invisible hit areas (see `TapZoneEngine`).
+    /// Runs once per touch-down; later movement stays with the chosen key, so swipes/long-presses are unaffected.
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard !isHidden, isUserInteractionEnabled, alpha > 0.01, self.point(inside: point, with: event) else { return nil }
+        let flat = keyViews.flatMap { $0 }
+        guard !flat.isEmpty else { return super.hitTest(point, with: event) }
+        let p = convert(point, to: rowsContainer)
+        let keys = flat.map { k -> TapZoneKey in
+            var letter: Character? = nil
+            var isTarget = false
+            if case .character(let s) = k.def.action {
+                isTarget = true
+                if let c = s.lowercased().first, c.isLetter { letter = c }
+            }
+            let f = k.frame
+            return TapZoneKey(x: Double(f.minX), y: Double(f.minY), width: Double(f.width), height: Double(f.height), letter: letter, isTarget: isTarget)
+        }
+        let prev = dynamicTapZones ? previousLetter?() : nil
+        if let i = TapZoneEngine.resolve(x: Double(p.x), y: Double(p.y), keys: keys, previous: prev, enabled: dynamicTapZones) {
+            return flat[i]
+        }
+        return super.hitTest(point, with: event)
     }
 
     override func layoutSubviews() {

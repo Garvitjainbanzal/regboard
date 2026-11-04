@@ -63,6 +63,11 @@ struct TypingView: View {
                 } header: { Text("Punctuation & capitals") } footer: {
                     Text("Double-space: tapping space twice quickly turns “word  ” into “word. ”.\nAuto punctuation: removes the space typed before , . ! ? ; : and adds a space after , ! ? when a letter follows (and after “.” before a capital letter). Domains like google.com are left alone.\nThese are simple fixed rules — RegBoard has no word prediction or autocorrection.")
                 }
+                Section {
+                    Toggle("Dynamic tap zones", isOn: $model.settings.dynamicTapZones)
+                } header: { Text("Accuracy") } footer: {
+                    Text("Keys you are more likely to press next get a slightly larger invisible tap area, and gaps between keys are never dead, so near-misses still type the right letter. The keys look the same. Uses a fixed letter-pair table; nothing you type is learned or stored.")
+                }
                 Section("Gestures") {
                     Toggle("Flick keys down for symbols", isOn: $model.settings.flickSymbols)
                     Label("Long-press a key for accents and alternates", systemImage: "hand.tap")

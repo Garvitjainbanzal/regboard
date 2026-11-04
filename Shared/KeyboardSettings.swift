@@ -20,8 +20,28 @@ public struct KeyboardSettings: Codable, Equatable {
     public var autoPunctuation = true             // smart spacing around , . ! ?
     public var flickSymbols = true                // pull a key downward for its hinted symbol
     public var longPressDelay: Double = 0.35
+    public var dynamicTapZones = true             // invisible tap zones adapt to the next likely letter
     public init() {}
 
+    // Custom decoding so settings saved by older versions (without newer keys) still load.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = KeyboardSettings()
+        themeMode = try c.decodeIfPresent(ThemeMode.self, forKey: .themeMode) ?? d.themeMode
+        accentID = try c.decodeIfPresent(String.self, forKey: .accentID) ?? d.accentID
+        language = try c.decodeIfPresent(LanguageLayout.self, forKey: .language) ?? d.language
+        showNumberRow = try c.decodeIfPresent(Bool.self, forKey: .showNumberRow) ?? d.showNumberRow
+        heightScale = try c.decodeIfPresent(Double.self, forKey: .heightScale) ?? d.heightScale
+        oneHanded = try c.decodeIfPresent(Handedness.self, forKey: .oneHanded) ?? d.oneHanded
+        hapticsEnabled = try c.decodeIfPresent(Bool.self, forKey: .hapticsEnabled) ?? d.hapticsEnabled
+        soundEnabled = try c.decodeIfPresent(Bool.self, forKey: .soundEnabled) ?? d.soundEnabled
+        autoCapitalize = try c.decodeIfPresent(Bool.self, forKey: .autoCapitalize) ?? d.autoCapitalize
+        doubleSpacePeriod = try c.decodeIfPresent(Bool.self, forKey: .doubleSpacePeriod) ?? d.doubleSpacePeriod
+        autoPunctuation = try c.decodeIfPresent(Bool.self, forKey: .autoPunctuation) ?? d.autoPunctuation
+        flickSymbols = try c.decodeIfPresent(Bool.self, forKey: .flickSymbols) ?? d.flickSymbols
+        longPressDelay = try c.decodeIfPresent(Double.self, forKey: .longPressDelay) ?? d.longPressDelay
+        dynamicTapZones = try c.decodeIfPresent(Bool.self, forKey: .dynamicTapZones) ?? d.dynamicTapZones
+    }
     public static let heightRange: ClosedRange<Double> = 0.7...1.4
     public mutating func clamp() { heightScale = min(max(heightScale, Self.heightRange.lowerBound), Self.heightRange.upperBound) }
 }

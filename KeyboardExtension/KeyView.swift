@@ -210,7 +210,10 @@ final class KeyView: UIView {
         case .space where dragged || trackpad:
             break
         default:
-            if bounds.insetBy(dx: -8, dy: -8).contains(touches.first?.location(in: self) ?? .zero) { onTap?(def) }
+                    // Dynamic tap zones can route a touch that landed outside this key's visible bounds to it,
+            // so judge "slid off to cancel" by distance travelled, not by the key's bounds.
+            let end = touches.first?.location(in: self) ?? touchStart
+            if bounds.insetBy(dx: -8, dy: -8).contains(end) || hypot(end.x - touchStart.x, end.y - touchStart.y) < 30 { onTap?(def) }
         }
     }
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {

@@ -49,7 +49,11 @@ final class KeyboardViewController: UIInputViewController {
         keyboardView.onSpaceDrag = { [weak self] n in self?.controller.moveCursor(by: n) }
         keyboardView.onSwipeSelectChars = { [weak self] n in self?.textDocumentProxy.adjustTextPosition(byCharacterOffset: n) }
         keyboardView.onCommitSwipeDelete = { [weak self] in self?.commitSwipeDelete() }
-        keyboardView.onHaptic = { [weak self] in self?.haptic() }
+                keyboardView.onHaptic = { [weak self] in self?.haptic() }
+        keyboardView.previousLetter = { [weak self] in
+            guard let c = self?.textDocumentProxy.documentContextBeforeInput?.last, c.isLetter else { return nil }
+            return c
+        }
         applyTraits(); applySettings()
         controller.beginEditing()
     }
@@ -149,6 +153,7 @@ final class KeyboardViewController: UIInputViewController {
         keyboardView.soundEnabled = settings.soundEnabled
         keyboardView.longPressDelay = settings.longPressDelay
         keyboardView.oneHanded = settings.oneHanded
+        keyboardView.dynamicTapZones = settings.dynamicTapZones
         keyboardView.accent = AccentColor.named(settings.accentID).color.ui
         keyboardView.palette = pal
         emojiPanel?.palette = pal

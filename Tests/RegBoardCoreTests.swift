@@ -224,3 +224,50 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(r.recents, ["🔥", "😀"]); r.clear(); XCTAssertTrue(r.recents.isEmpty)
     }
 }
+
+final class TapZoneTests: XCTestCase {
+    // Two adjacent 30pt-wide letter keys with a 6pt gap: "h" at x 0..30, "n" at x 36..66; plus a space-like modifier below.
+    private func keys() -> [TapZoneKey] {
+        [TapZoneKey(x: 0, y: 0, width: 30, height: 40, letter: "h"),
+         TapZoneKey(x: 36, y: 0, width: 30, height: 40, letter: "n"),
+         TapZoneKey(x: 0, y: 52, width: 66, height: 40, letter: nil, isTarget: false)]
+    }
+    func testDirectHitCentre() {
+        XCTAssertEqual(TapZoneEngine.resolve(x: 15, y: 20, keys: keys(), previous: "t"), 0)
+        XCTAssertEqual(TapZoneEngine.resolve(x: 51, y: 20, keys: keys(), previous: "t"), 1)
+    }
+    func testGapIsNeverDead() {
+        XCTAssertNotNil(TapZoneEngine.resolve(x: 33, y: 20, keys: keys(), previous: nil))
+    }
+    func testLikelyKeyWinsTheBorder() {
+        // Touch on the far edge of "h" nearest to "n" (x=29). After "t", "h" is very likely, "n" is not.
+        XCTAssertEqual(TapZoneEngine.resolve(x: 29, y: 20, keys: keys(), previous: "t"), 0)
+        // In the gap (x=31): after "t" the likelier "h" wins; after "i" the likelier "n" wins.
+        XCTAssertEqual(TapZoneEngine.resolve(x: 31, y: 20, keys: keys(), previous: "t"), 0)
+        XCTAssertEqual(TapZoneEngine.resolve(x: 31, y: 20, keys: keys(), previous: "i"), 1)
+    }
+    func testCentreOfKeyNeverStolen() {
+        XCTAssertEqual(TapZoneEngine.resolve(x: 15, y: 20, keys: keys(), previous: "i"), 0)
+    }
+    func testModifierIsOnlyHitDirectly() {
+        XCTAssertEqual(TapZoneEngine.resolve(x: 33, y: 70, keys: keys(), previous: "t"), 2)
+    }
+    func testFarAwayHitsNothing() {
+        XCTAssertNil(TapZoneEngine.resolve(x: 300, y: 300, keys: keys(), previous: "t"))
+    }
+    func testDisabledIsExactOnly() {
+        XCTAssertNil(TapZoneEngine.resolve(x: 33, y: 20, keys: keys(), previous: "t", enabled: false))
+        XCTAssertEqual(TapZoneEngine.resolve(x: 29, y: 20, keys: keys(), previous: "i", enabled: false), 0)
+    }
+    func testBoostRange() {
+        XCTAssertEqual(BigramModel.boost(after: nil, candidate: "h"), 1.0)
+        XCTAssertEqual(BigramModel.boost(after: "t", candidate: "h"), BigramModel.maxBoost, accuracy: 0.0001)
+        XCTAssertEqual(BigramModel.boost(after: "q", candidate: "z"), 1.0)
+        XCTAssertEqual(BigramModel.boost(after: "T", candidate: "H"), BigramModel.maxBoost, accuracy: 0.0001)
+    }
+    func testOldSettingsStillDecode() throws {
+        let json = #"{"accentID":"blue","showNumberRow":false}"#.data(using: .utf8)!
+        let s = try JSONDecoder().decode(KeyboardSettings.self, from: json)
+        XCTAssertFalse(s.showNumberRow); XCTAssertTrue(s.dynamicTapZones)
+    }
+}
