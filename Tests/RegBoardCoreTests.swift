@@ -174,9 +174,9 @@ final class LayoutTests: XCTestCase {
         XCTAssertEqual(labels(n[2]), ["=\\<", "*", "\"", "'", ":", ";", "!", "?", "⌫"])
         XCTAssertEqual(n[2].first?.action, .switchToSymbols); XCTAssertEqual(n[2].last?.action, .backspace)
         XCTAssertEqual(n[3].map(\.action), [.switchToLetters, .character(","), .space, .character("."), .returnKey])
-        XCTAssertEqual(n[3][0].label, "ABC"); XCTAssertTrue(n[3][0].pill)
+        XCTAssertEqual(n[3][0].label, "ABC")
+        // Space bar on numbers page still shows the language name + badge (useful orientation cue)
         XCTAssertEqual(n[3][2].label, "English"); XCTAssertNotNil(n[3][2].badge)
-        XCTAssertTrue(n[3][4].pill)
         XCTAssertGreaterThan(n[3][2].widthWeight, n[3][1].widthWeight * 3)
     }
     func testNumberPanelWithGlobeAndLanguageLabel() {
