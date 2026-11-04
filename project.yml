@@ -13,7 +13,19 @@ targets:
     type: application
     platform: iOS
     sources: [GboardCloneApp, Shared]
-    info: { path: GboardCloneApp/Info.plist }
+    # Keys are listed here too: XcodeGen rewrites Info.plist from this block, so anything only in the
+    # plist file (e.g. UILaunchScreen) can be dropped at generate time and the app launches letterboxed.
+    info:
+      path: GboardCloneApp/Info.plist
+      properties:
+        CFBundleDisplayName: RegBoard
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
     entitlements: { path: GboardCloneApp/GboardCloneApp.entitlements }
     settings:
       base:

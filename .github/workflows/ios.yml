@@ -49,6 +49,8 @@ jobs:
             -sdk iphoneos \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO
+          # Fail the build if the launch screen key was lost (app would run letterboxed on device).
+          plutil -extract UILaunchScreen xml1 -o - build/Build/Products/Release-iphoneos/RegBoard.app/Info.plist
           mkdir -p Payload
           cp -R build/Build/Products/Release-iphoneos/RegBoard.app Payload/
           zip -qr RegBoard-unsigned.ipa Payload
