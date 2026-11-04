@@ -1,27 +1,13 @@
 name: CI
 
-# Triggers:
-#   workflow_dispatch  – manual run from the Actions tab (existing behaviour)
-#   push to main       – automatic build on every push; creates a GitHub Release
-#                        with the unsigned IPA so SideStore can pick it up.
 on:
   workflow_dispatch:
-  # push:
-  #   branches: [main]
-  #   # Ignore documentation-only or workflow-only changes to save runner minutes.
-  #   paths-ignore:
-  #     - 'docs/**'
-  #     - '**.md'
-  #     - '.gitignore'
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # ──────────────────────────────────────────────────────────────────────────
-  # Job 1: Platform-independent Swift tests (Linux, fast, free tier)
-  # ──────────────────────────────────────────────────────────────────────────
   core-tests:
     name: Core tests (swift test, Linux)
     runs-on: ubuntu-latest
@@ -31,32 +17,20 @@ jobs:
       - name: swift test
         run: swift test
 
-  # ──────────────────────────────────────────────────────────────────────────
-  # Job 2: iOS build → unsigned IPA → GitHub Release
-  # ──────────────────────────────────────────────────────────────────────────
   ios-build:
-    name: iOS build & release
+    name: iOS build & tests (simulator)
     runs-on: macos-15
-    # Only publish a Release on push to main; on workflow_dispatch just build.
-    permissions:
-      contents: write   # needed to create GitHub Releases
     steps:
       - uses: actions/checkout@v4
-
       - name: Install XcodeGen
         run: brew install xcodegen
-
       - name: Generate Xcode project
         run: xcodegen generate
-
       - name: Pick an iPhone simulator
         run: |
-          DEVICE=$(xcrun simctl list devices available \
-            | grep -m1 -oE 'iPhone [0-9]+[^(]*' \
-            | sed 's/ *$//')
-          echo "SIM_NAME=$DEVICE" >> "$GITHUB_ENV"
-
-      - name: Build and test (simulator)
+          DEVICE=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone [0-9]+[^(]*' | sed 's/ *$//')
+          echo "SIM_NAME=$DEVICE" | tee -a "$GITHUB_ENV"
+      - name: Build and test
         run: |
           set -o pipefail
           xcodebuild test \
@@ -65,12 +39,7 @@ jobs:
             -destination "platform=iOS Simulator,name=${SIM_NAME}" \
             CODE_SIGNING_ALLOWED=NO \
             | tee xcodebuild.log
-
-      # ── Build an unsigned device IPA ──────────────────────────────────────
-      # CODE_SIGNING_ALLOWED=NO produces a valid .app bundle that SideStore
-      # (or AltStore) will re-sign locally on the device with your Apple ID.
-      # The result is a standard IPA: a zip containing Payload/RegBoard.app.
-      - name: Build unsigned device IPA
+      - name: Build unsigned device .app (app + keyboard extension)
         run: |
           set -o pipefail
           xcodebuild build \
@@ -83,132 +52,11 @@ jobs:
           mkdir -p Payload
           cp -R build/Build/Products/Release-iphoneos/RegBoard.app Payload/
           zip -qr RegBoard-unsigned.ipa Payload
-
-      # ── Compute version tag ───────────────────────────────────────────────
-      # Format: v<CFBundleShortVersionString>+<short SHA>
-      # This becomes the GitHub Release tag and appears in the AltSource JSON.
-      - name: Compute version info
-        id: ver
-        run: |
-          SHORT_VER=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleShortVersionString" \
-            GboardCloneApp/Info.plist 2>/dev/null || echo "1.0")
-          SHORT_SHA="${GITHUB_SHA::7}"
-          echo "version=${SHORT_VER}" >> "$GITHUB_OUTPUT"
-          echo "tag=v${SHORT_VER}+${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
-
-      # ── Update AltSource / SideStore source JSON ──────────────────────────
-      # altsource.json is the machine-readable app catalogue that SideStore
-      # reads when you add the source URL. We regenerate it on every release
-      # so the "latest version" entry always points to the newest IPA.
-      - name: Regenerate altsource.json
-        env:
-          REPO: ${{ github.repository }}
-          TAG:  ${{ steps.ver.outputs.tag }}
-          VER:  ${{ steps.ver.outputs.version }}
-          DATE: ${{ steps.ver.outputs.build_date }}
-        run: |
-          python3 - <<PYEOF
-          import json, os
-
-          repo    = os.environ["REPO"]
-          tag     = os.environ["TAG"]
-          version = os.environ["VER"]
-          date    = os.environ["DATE"]
-          ipa_url = f"https://github.com/{repo}/releases/download/{tag}/RegBoard-unsigned.ipa"
-
-          # SideStore requires a 'size' field (bytes) in every version entry.
-          ipa_size = os.path.getsize("RegBoard-unsigned.ipa")
-
-          source = {
-            "name": "RegBoard",
-            "identifier": "com.regboard.source",
-            "sourceURL": f"https://raw.githubusercontent.com/{repo}/main/altsource.json",
-            "apps": [
-              {
-                "name": "RegBoard",
-                "bundleIdentifier": "com.regboard.regboard",
-                "developerName": "RegBoard",
-                "subtitle": "Gboard-style iOS keyboard",
-                "localizedDescription": (
-                  "RegBoard is an open-source iOS keyboard extension with "
-                  "dynamic tap zones, bigram-based key prediction, swipe-delete, "
-                  "and shift+space text selection."
-                ),
-                "iconURL": f"https://raw.githubusercontent.com/{repo}/main/docs/icon.png",
-                "tintColor": "1A73E8",
-                "screenshotURLs": [],
-                "versions": [
-                  {
-                    "version": version,
-                    "date": date,
-                    "downloadURL": ipa_url,
-                    "localizedDescription": f"Build {tag}",
-                    "minOSVersion": "16.0",
-                    "size": ipa_size
-                  }
-                ],
-                "appID": "com.regboard.regboard"
-              }
-            ],
-            "news": []
-          }
-
-          with open("altsource.json", "w") as f:
-              json.dump(source, f, indent=2)
-          print(f"altsource.json written — IPA URL: {ipa_url}, size: {ipa_size} bytes")
-          PYEOF
-
-      # ── Commit the updated altsource.json back to main ───────────────────
-      # SideStore fetches this file directly from the raw GitHub URL, so it
-      # must live in the repo. We commit it with [skip ci] to avoid a loop.
-      - name: Commit updated altsource.json
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add altsource.json
-          # Only commit if the file changed.
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: update altsource.json for ${{ steps.ver.outputs.tag }} [skip ci]"
-            git push
-          fi
-
-      # ── Create GitHub Release with IPA as asset ───────────────────────────
-      # Only on push to main (not on workflow_dispatch, which is used for
-      # test builds without creating a release).
-      - name: Create GitHub Release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.ver.outputs.tag }}
-          name: "RegBoard ${{ steps.ver.outputs.tag }}"
-          body: |
-            ## RegBoard ${{ steps.ver.outputs.version }}
-
-            **Unsigned IPA** — install via SideStore or AltStore.
-
-            ### Install
-            1. Add the SideStore source: `https://raw.githubusercontent.com/${{ github.repository }}/main/altsource.json`
-            2. Find RegBoard in the source and tap **Install**.
-
-            ### Direct download
-            Download `RegBoard-unsigned.ipa` from the Assets section below,
-            then open it in SideStore / AltStore on your iPhone.
-
-            ### Commit
-            `${{ github.sha }}`
-          files: RegBoard-unsigned.ipa
-          fail_on_unmatched_files: true
-
-      # ── Always upload IPA as a workflow artifact (for workflow_dispatch) ──
-      - name: Upload IPA artifact
+      - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
           name: RegBoard-unsigned-ipa
           path: RegBoard-unsigned.ipa
-
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4

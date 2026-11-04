@@ -43,24 +43,12 @@ final class KeyboardViewController: UIInputViewController {
             keyboardView.topAnchor.constraint(equalTo: view.topAnchor),
             keyboardView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
-        keyboardView.onKey = { [weak self] def in
-            self?.controller.handle(def.action)
-            // Feed the bigram engine: record the letter just typed so the next
-            // touch gets appropriately expanded hitboxes for likely following chars.
-            if case .character(let s) = def.action, let ch = s.lowercased().first, ch.isLetter {
-                self?.keyboardView.lastTypedLetter = ch
-            } else if case .space = def.action {
-                // After a space we're at a word boundary — clear the bigram context
-                // so the first letter of the new word gets neutral hitboxes.
-                self?.keyboardView.lastTypedLetter = nil
-            }
-        }
+        keyboardView.onKey = { [weak self] def in self?.controller.handle(def.action) }
         keyboardView.onAlternate = { [weak self] s in self?.controller.insertAlternate(s) }
         keyboardView.onRepeatDelete = { [weak self] in self?.controller.repeatDelete() }
         keyboardView.onSpaceDrag = { [weak self] n in self?.controller.moveCursor(by: n) }
         keyboardView.onSwipeSelectChars = { [weak self] n in self?.textDocumentProxy.adjustTextPosition(byCharacterOffset: n) }
         keyboardView.onCommitSwipeDelete = { [weak self] in self?.commitSwipeDelete() }
-        keyboardView.onSelectDrag = { [weak self] n in self?.extendSelection(by: n) }
         keyboardView.onHaptic = { [weak self] in self?.haptic() }
         applyTraits(); applySettings()
         controller.beginEditing()
@@ -68,9 +56,12 @@ final class KeyboardViewController: UIInputViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        // applySettings() reloads from the store itself, so no explicit load needed here.
-        applySettings(); applyTraits()
-        if !isBeingPresented { controller.beginEditing(); keyboardView.lastTypedLetter = nil }
+        // Pick up changes made in the containing app.
+        // isBeingPresented guard prevents a redundant beginEditing() on the very first appearance
+        // since viewDidLoad already called it. On subsequent appearances (switching back to this
+        // keyboard from another input mode) we do want to reset state.
+        settings = settingsStore.load(); applySettings(); applyTraits()
+        if !isBeingPresented { controller.beginEditing() }
     }
 
     override func updateViewConstraints() {
@@ -91,20 +82,10 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func targetHeight() -> CGFloat {
-        // Determine orientation without UIApplication.shared (unavailable in extensions).
-        // view.bounds is valid after the first layout pass. Before that, fall back to
-        // the window scene via view.window — also extension-safe.
-        let landscape: Bool
-        if view.bounds.width > 0 {
-            landscape = view.bounds.width > view.bounds.height
-        } else if let scene = view.window?.windowScene {
-            let size = scene.coordinateSpace.bounds.size
-            landscape = size.width > size.height
-        } else {
-            // Last resort before the first layout: use the trait collection horizontal
-            // size class as a coarse proxy. Compact = portrait on iPhone.
-            landscape = traitCollection.verticalSizeClass == .compact
-        }
+        // Use the screen width/height to determine orientation — view.bounds may
+        // not be valid yet when this is called early in the layout pass.
+        let screen = UIScreen.main.bounds
+        let landscape = screen.width > screen.height
         let base: CGFloat = landscape ? 190 : 260
         let rowsExtra: CGFloat = settings.showNumberRow ? 0 : -42
         return (base + rowsExtra) * CGFloat(settings.heightScale)
@@ -119,11 +100,14 @@ final class KeyboardViewController: UIInputViewController {
 
     override func textWillChange(_ textInput: UITextInput?) {}
     override func textDidChange(_ textInput: UITextInput?) {
-        // Re-apply settings on every document change so that any settings the user
-        // adjusted in the companion app (accent, height, number row, one-handed mode)
-        // are reflected immediately. applySettings() reloads from UserDefaults and
-        // guards the constraint update behind a changed-value check, so this is cheap
-        // when nothing has actually changed.
+        // Only re-apply traits/appearance when something structural may have changed
+        // (return key type, secure flag, keyboard appearance). Avoid calling render()
+        // directly here — that happens inside applySettings → render(). To prevent a
+        // full key-row rebuild on every host-app keystroke (e.g. live-search fields),
+        // we check whether the derived traits or palette actually changed before doing work.
+        let newTraits = buildTraits()
+        let newPalette = ThemePalette.palette(mode: settings.themeMode, systemIsDark: systemIsDark())
+        guard newTraits != controller.traits || newPalette != keyboardView.palette else { return }
         applyTraits(); applySettings()
     }
     override func traitCollectionDidChange(_ previous: UITraitCollection?) {
@@ -160,17 +144,6 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func applySettings() {
-        // Always reload from the store so changes made in the companion app
-        // (height, number row, accent, one-handed mode, etc.) are picked up
-        // immediately the next time the keyboard renders, without requiring the
-        // user to switch away and back to the keyboard.
-        let loaded = settingsStore.load()
-        // Skip all work when nothing changed — keeps textDidChange cheap on every keystroke.
-        guard loaded != settings else {
-            // Still need to render in case shift state changed.
-            render(); return
-        }
-        settings = loaded
         controller.apply(settings: settings)
         let pal = ThemePalette.palette(mode: settings.themeMode, systemIsDark: systemIsDark())
         keyboardView.soundEnabled = settings.soundEnabled
@@ -179,8 +152,8 @@ final class KeyboardViewController: UIInputViewController {
         keyboardView.accent = AccentColor.named(settings.accentID).color.ui
         keyboardView.palette = pal
         emojiPanel?.palette = pal
-        // Trigger a constraint update whenever the target height may have changed.
-        // The guard inside updateViewConstraints skips the work if nothing changed.
+        // Only trigger a constraint update when the target height has actually changed,
+        // not on every keystroke. render() handles the key-row update separately.
         let newH = targetHeight()
         if newH != lastComputedHeight { view.setNeedsUpdateConstraints() }
         render()
@@ -217,15 +190,6 @@ final class KeyboardViewController: UIInputViewController {
             controller.deleteWord()
         }
         controller.textContextChanged()
-    }
-
-    // MARK: Shift+space selection trackpad
-    /// Extends or shrinks the text selection by moving the active selection end.
-    /// `adjustTextPosition` on iOS begins a selection from the caret when called
-    /// the first time, then extends it on subsequent calls. Positive = forward.
-    private func extendSelection(by offset: Int) {
-        guard offset != 0 else { return }
-        textDocumentProxy.adjustTextPosition(byCharacterOffset: offset)
     }
 
     // MARK: Emoji

@@ -13,9 +13,11 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
     var onRepeatDelete: (() -> Void)?
     var onSpaceDrag: ((Int) -> Void)?
     var onHaptic: (() -> Void)?
+    /// Called during swipe-left on backspace with the cursor offset to apply (negative = move left).
+    /// This causes the host field to show a live selection.
     var onSwipeSelectChars: ((Int) -> Void)?
+    /// Called when the swipe-left-on-backspace gesture ends — delete the selection.
     var onCommitSwipeDelete: (() -> Void)?
-    var onSelectDrag: ((Int) -> Void)?
 
     private let rowsContainer = UIView()
     private var rows: [[KeyDef]] = []
@@ -23,17 +25,10 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
     private var shift: ShiftState = .off
     var oneHanded: Handedness = .off { didSet { setNeedsLayout() } }
 
-    private let rowSpacing: CGFloat = 11   // vertical gap between rows
-    private let keySpacing: CGFloat = 5    // horizontal gap between keys
-    private let inset: CGFloat = 3         // left/right edge margin
-
-    // Tracks whether shift is physically down for shift+space selection trackpad.
-    private var shiftIsHeld = false
-
-    // Tracks UITouch objects currently active on modifier keys.
-    // Using a Set<ObjectIdentifier> (wrapping the touch pointer) avoids retaining
-    // UITouch objects and is safe from the asyncAfter race that previously crashed.
-    private var activeModifierTouchIDs = Set<ObjectIdentifier>()
+    // iOS system keyboard metrics
+    private let rowSpacing: CGFloat = 12   // vertical gap between rows
+    private let keySpacing: CGFloat = 6    // horizontal gap between keys
+    private let inset: CGFloat = 4         // left/right edge margin
 
     init() {
         super.init(frame: .zero, inputViewStyle: .keyboard)
@@ -60,66 +55,32 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
     private func makeKey(_ d: KeyDef) -> KeyView {
         let k = KeyView(def: d, palette: palette, accent: accent)
         k.soundEnabled = soundEnabled; k.longPressDelay = longPressDelay
-        switch d.action {
-        case .shift:
-            k.onTap = { [weak self] key in
-                self?.shiftIsHeld = false
-                self?.onKey?(key)
-            }
-            k.onShiftRelease = { [weak self] p in
-                self?.shiftIsHeld = false
-                self?.shiftRelease(at: p)
-            }
-        default:
-            k.onTap = { [weak self] in self?.onKey?($0) }
-        }
+        k.onTap = { [weak self] in self?.onKey?($0) }
         k.onAlternate = { [weak self] in self?.onAlternate?($0) }
         k.onRepeat = { [weak self] in self?.onRepeatDelete?() }
         k.onSpaceDrag = { [weak self] in self?.onSpaceDrag?($0) }
         k.onHaptic = { [weak self] in self?.onHaptic?() }
-        k.onTrackpadChanged = { [weak self] on in
-            if !on { self?.shiftIsHeld = false }
-            self?.setTrackpad(on)
-        }
+        k.onTrackpadChanged = { [weak self] on in self?.setTrackpad(on) }
         k.onSwipeSelectChars = { [weak self] in self?.onSwipeSelectChars?($0) }
         k.onCommitSwipeDelete = { [weak self] in self?.onCommitSwipeDelete?() }
-        k.onSelectDrag = { [weak self] in self?.onSelectDrag?($0) }
+        k.onShiftRelease = { [weak self] p in self?.shiftRelease(at: p) }
         return k
     }
 
     func restyle() {
         backgroundColor = palette.background.ui
-        let isDark = palette == .dark
-        keyViews.flatMap { $0 }.forEach { k in
-            k.palette = palette; k.accent = accent
-            k.soundEnabled = soundEnabled; k.longPressDelay = longPressDelay
-            // iOS system keyboard: letter keys have a 1pt bottom shadow in light mode only.
-            let isCharKey: Bool
-            if case .character = k.def.action { isCharKey = true }
-            else if k.def.action == .space    { isCharKey = true }
-            else                               { isCharKey = false }
-            if !isDark && isCharKey {
-                k.layer.masksToBounds = false
-                k.layer.shadowColor   = UIColor(white: 0, alpha: 1).cgColor
-                k.layer.shadowOpacity = 0.3
-                k.layer.shadowRadius  = 0
-                k.layer.shadowOffset  = CGSize(width: 0, height: 1)
-            } else {
-                k.layer.masksToBounds = true
-                k.layer.shadowOpacity = 0
-            }
+        keyViews.flatMap { $0 }.forEach {
+            $0.palette = palette; $0.accent = accent
+            $0.soundEnabled = soundEnabled; $0.longPressDelay = longPressDelay
         }
     }
 
+    /// Shift-swipe: pressing ⇧ and releasing on a letter types that letter in uppercase without changing shift state.
     private func shiftRelease(at p: CGPoint) {
         for k in keyViews.flatMap({ $0 }) {
-            if case .character(let s) = k.def.action, k.convert(k.bounds, to: nil).contains(p) {
-                onAlternate?(s.uppercased()); return
-            }
+            if case .character(let s) = k.def.action, k.convert(k.bounds, to: nil).contains(p) { onAlternate?(s.uppercased()); return }
         }
     }
-
-    // MARK: - Layout
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -130,8 +91,10 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
         rowsContainer.bounds = CGRect(x: 0, y: 0, width: w, height: bounds.height)
         guard !rows.isEmpty else { return }
 
+        // Distribute height evenly across all rows with equal spacing above and between them,
+        // plus a small bottom inset so keys sit above the home indicator area.
         let topInset: CGFloat = 8
-        let bottomInset: CGFloat = 6
+        let bottomInset: CGFloat = 4
         let usableH = rowsContainer.bounds.height - topInset - bottomInset
         let totalSpacing = rowSpacing * CGFloat(rows.count - 1)
         let rowH = (usableH - totalSpacing) / CGFloat(rows.count)
@@ -139,6 +102,8 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
         for (r, row) in rows.enumerated() {
             let totalWeight = CGFloat(row.reduce(0) { $0 + $1.widthWeight })
             let tenKeyUnit = (w - 2 * inset - keySpacing * 9) / 10
+            // Letter-only rows shorter than 10 keys keep the 10-key unit and center;
+            // mixed/modifier rows fill the full width proportionally.
             let shortLetterRow = row.count < 10 && row.allSatisfy { !$0.isModifier }
             let unit = shortLetterRow
                 ? tenKeyUnit
@@ -155,113 +120,13 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
             }
         }
     }
+}
 
-    // MARK: - Trackpad dimming
-
+extension KeyboardView {
+    /// Dim the other keys while the space bar is acting as a trackpad.
     func setTrackpad(_ on: Bool) {
         UIView.animate(withDuration: 0.12) {
             self.keyViews.flatMap { $0 }.filter { $0.def.action != .space }.forEach { $0.alpha = on ? 0.45 : 1 }
         }
-    }
-
-    // MARK: - Touch tracking for modifier-touch suppression
-
-    /// Keep the active-modifier set in sync by observing every touch event that
-    /// passes through this view. This is called by UIKit before hitTest on each
-    /// touch event, so it is always up to date.
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        super.touchesBegan(touches, with: event)
-    }
-
-    // MARK: - Dynamic tap-zone hit-testing
-
-    /// The last lowercase letter that was tapped. Drives bigram-based hitbox expansion.
-    var lastTypedLetter: Character? {
-        get { objc_getAssociatedObject(self, &KeyboardView.lastTypedKey) as? Character }
-        set { objc_setAssociatedObject(self, &KeyboardView.lastTypedKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }
-    }
-    private static var lastTypedKey = 0
-
-    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        // Guard: only process touches that are actually within our bounds.
-        guard bounds.contains(point), !isHidden, alpha > 0.01, isUserInteractionEnabled else {
-            return nil
-        }
-
-        // Update active-modifier-touch tracking from the live event.
-        // UIKit passes the current UIEvent to hitTest; its allTouches set reflects
-        // exactly which touches are on-screen right now. We use ObjectIdentifier(touch)
-        // as a stable pointer-based key so we never retain the UITouch itself.
-        if let event = event {
-            let liveTouchIDs = Set((event.allTouches ?? []).map { ObjectIdentifier($0) })
-            // Remove any IDs that are no longer live (touch ended / cancelled).
-            activeModifierTouchIDs.formIntersection(liveTouchIDs)
-        }
-
-        let localPoint = convert(point, to: rowsContainer)
-        let allKeys = keyViews.flatMap { $0 }
-
-        // --- Step 1: Find the geometrically hit key (if any) ---
-        var hitCharKey: KeyView? = nil
-        var hitModifierKey: KeyView? = nil
-        for k in allKeys {
-            guard k.frame.contains(localPoint) else { continue }
-            if case .character = k.def.action {
-                hitCharKey = k
-            } else {
-                hitModifierKey = k
-            }
-            break  // frames don't overlap; first match is the answer
-        }
-
-        // --- Step 2: If a modifier key was directly hit, register it and return it ---
-        if let modKey = hitModifierKey {
-            if let event = event {
-                for touch in event.allTouches ?? [] {
-                    // A touch in .began phase that lands on this modifier key gets registered.
-                    if touch.phase == .began {
-                        activeModifierTouchIDs.insert(ObjectIdentifier(touch))
-                    }
-                }
-            }
-            if modKey.def.action == .shift { shiftIsHeld = true }
-            return modKey
-        }
-
-        // --- Step 3: If any modifier touch is still live, bypass bigram scoring ---
-        // This ensures a swipe that started on backspace/space is never stolen.
-        if !activeModifierTouchIDs.isEmpty {
-            // Return the geometrically hit character key if there is one,
-            // otherwise let the touch go to whatever super finds.
-            return hitCharKey ?? super.hitTest(point, with: event)
-        }
-
-        // --- Step 4: No modifier touches active — apply bigram scoring ---
-        let charKeys = allKeys.filter { if case .character = $0.def.action { return true }; return false }
-        guard !charKeys.isEmpty else { return hitCharKey ?? super.hitTest(point, with: event) }
-
-        let prev = lastTypedLetter
-        var bestKey: KeyView? = nil
-        var bestScore = Double.greatestFiniteMagnitude
-
-        for k in charKeys {
-            if k.def.action == .space { k.shiftHeld = shiftIsHeld }
-            let center = CGPoint(x: k.frame.midX, y: k.frame.midY)
-            let dx = Double(localPoint.x - center.x)
-            let dy = Double(localPoint.y - center.y)
-            let rawDist = (dx * dx + dy * dy * 0.75).squareRoot()
-            var boost = 1.0
-            if let ch = k.def.label.lowercased().first, ch.isLetter {
-                boost = BigramModel.boost(after: prev, candidate: ch)
-            }
-            let score = rawDist / boost
-            if score < bestScore { bestScore = score; bestKey = k }
-        }
-
-        // Only redirect to the scored winner when the touch is within the keyboard area.
-        // If the touch is far outside all keys (e.g. above the top row), fall back to
-        // standard hit-testing so other subviews (popover, preview) can receive it.
-        if let winner = bestKey, bestScore < 200 { return winner }
-        return super.hitTest(point, with: event)
     }
 }

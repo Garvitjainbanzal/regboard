@@ -78,6 +78,7 @@ final class InputControllerTests: XCTestCase {
         XCTAssertTrue(hidden)
         XCTAssertTrue(proxy.text.isEmpty, "Sentinel should not be typed as a character")
     }
+
     // 1. Double-space full stop (toggle)
     func testDoubleSpacePeriodOn() {
         type("hello"); ctl.handle(.space); tick(0.2); ctl.handle(.space); XCTAssertEqual(proxy.text, "hello. ")
@@ -137,13 +138,10 @@ final class LayoutTests: XCTestCase {
         let r = rows()
         XCTAssertEqual(r.count, 5); XCTAssertEqual(r[1].count, 10); XCTAssertEqual(r[2].count, 9); XCTAssertEqual(r[3].count, 9)
         XCTAssertEqual(r.last!.first!.action, .switchToNumbers)
-        // Bottom row: 123 | globe | emoji | space | return  (no dedicated "." or hideKeyboard key)
+        // Hide keyboard is now accessed via long-press on "." (sentinel "⌄" alternate), not a dedicated key.
         XCTAssertFalse(r.last!.contains { $0.action == .hideKeyboard })
-        XCTAssertFalse(r.last!.contains { if case .character(".") = $0.action { return true }; return false })
-        // Space label is now "space" to match the iOS system keyboard
-        XCTAssertEqual(r.last!.first { $0.action == .space }?.label, "space")
-        XCTAssertTrue(r.last!.contains { $0.action == .emoji })
-        XCTAssertEqual(r.last!.last?.action, .returnKey)
+        XCTAssertTrue(r.last!.first { if case .character(".") = $0.action { return true }; return false }?.alternates.contains("⌄") == true)
+        XCTAssertEqual(r.last!.first { $0.action == .space }?.label, "English")
     }
     func testNumberRowToggleAndGlobe() {
         let r = rows(numRow: false, globe: false)
@@ -174,14 +172,15 @@ final class LayoutTests: XCTestCase {
         XCTAssertEqual(labels(n[2]), ["=\\<", "*", "\"", "'", ":", ";", "!", "?", "⌫"])
         XCTAssertEqual(n[2].first?.action, .switchToSymbols); XCTAssertEqual(n[2].last?.action, .backspace)
         XCTAssertEqual(n[3].map(\.action), [.switchToLetters, .character(","), .space, .character("."), .returnKey])
-        XCTAssertEqual(n[3][0].label, "ABC")
-        XCTAssertEqual(n[3][2].label, "space"); XCTAssertNotNil(n[3][2].badge)
+        XCTAssertEqual(n[3][0].label, "ABC"); XCTAssertTrue(n[3][0].pill)
+        XCTAssertEqual(n[3][2].label, "English"); XCTAssertNotNil(n[3][2].badge)
+        XCTAssertTrue(n[3][4].pill)
         XCTAssertGreaterThan(n[3][2].widthWeight, n[3][1].widthWeight * 3)
     }
     func testNumberPanelWithGlobeAndLanguageLabel() {
         let n = rows(.numbers, .germanQWERTZ, globe: true)
         XCTAssertEqual(n[3].map(\.action), [.switchToLetters, .nextKeyboard, .character(","), .space, .character("."), .returnKey])
-        XCTAssertEqual(n[3][3].label, "space")
+        XCTAssertEqual(n[3][3].label, "Deutsch")
     }
     func testSymbolPageAndRupeeAlternates() {
         let s = rows(.symbols)
