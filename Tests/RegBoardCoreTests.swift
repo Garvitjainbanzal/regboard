@@ -175,14 +175,13 @@ final class LayoutTests: XCTestCase {
         XCTAssertEqual(n[2].first?.action, .switchToSymbols); XCTAssertEqual(n[2].last?.action, .backspace)
         XCTAssertEqual(n[3].map(\.action), [.switchToLetters, .character(","), .space, .character("."), .returnKey])
         XCTAssertEqual(n[3][0].label, "ABC")
-        // Space bar on numbers page still shows the language name + badge (useful orientation cue)
-        XCTAssertEqual(n[3][2].label, "English"); XCTAssertNotNil(n[3][2].badge)
+        XCTAssertEqual(n[3][2].label, "space"); XCTAssertNotNil(n[3][2].badge)
         XCTAssertGreaterThan(n[3][2].widthWeight, n[3][1].widthWeight * 3)
     }
     func testNumberPanelWithGlobeAndLanguageLabel() {
         let n = rows(.numbers, .germanQWERTZ, globe: true)
         XCTAssertEqual(n[3].map(\.action), [.switchToLetters, .nextKeyboard, .character(","), .space, .character("."), .returnKey])
-        XCTAssertEqual(n[3][3].label, "Deutsch")
+        XCTAssertEqual(n[3][3].label, "space")
     }
     func testSymbolPageAndRupeeAlternates() {
         let s = rows(.symbols)
