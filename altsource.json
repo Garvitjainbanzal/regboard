@@ -18,7 +18,8 @@
           "date": "2026-11-03T00:00:00Z",
           "downloadURL": "https://github.com/Garvitjainbanzal/regboard/releases/latest/download/RegBoard-unsigned.ipa",
           "localizedDescription": "Initial release",
-          "minOSVersion": "16.0"
+          "minOSVersion": "16.0",
+          "size": 1000000
         }
       ],
       "appID": "com.regboard.regboard"

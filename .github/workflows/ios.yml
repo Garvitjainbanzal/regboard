@@ -116,9 +116,10 @@ jobs:
           tag     = os.environ["TAG"]
           version = os.environ["VER"]
           date    = os.environ["DATE"]
-          # Build the IPA URL directly in Python — shell variables aren't
-          # visible to the heredoc subprocess via os.environ.
           ipa_url = f"https://github.com/{repo}/releases/download/{tag}/RegBoard-unsigned.ipa"
+
+          # SideStore requires a 'size' field (bytes) in every version entry.
+          ipa_size = os.path.getsize("RegBoard-unsigned.ipa")
 
           source = {
             "name": "RegBoard",
@@ -144,7 +145,8 @@ jobs:
                     "date": date,
                     "downloadURL": ipa_url,
                     "localizedDescription": f"Build {tag}",
-                    "minOSVersion": "16.0"
+                    "minOSVersion": "16.0",
+                    "size": ipa_size
                   }
                 ],
                 "appID": "com.regboard.regboard"
@@ -155,7 +157,7 @@ jobs:
 
           with open("altsource.json", "w") as f:
               json.dump(source, f, indent=2)
-          print(f"altsource.json written — IPA URL: {ipa_url}")
+          print(f"altsource.json written — IPA URL: {ipa_url}, size: {ipa_size} bytes")
           PYEOF
 
       # ── Commit the updated altsource.json back to main ───────────────────
