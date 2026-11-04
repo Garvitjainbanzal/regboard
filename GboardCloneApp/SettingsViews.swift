@@ -49,7 +49,7 @@ struct TypingView: View {
                 Section {
                     Toggle("Dynamic tap zones", isOn: $model.settings.dynamicTapZones)
                 } header: { Text("Accuracy") } footer: {
-                    Text("Keys you are more likely to press next get a slightly larger invisible tap area, and gaps between keys are never dead, so near-misses still type the right letter. The keys look the same. Uses a fixed letter-pair table; nothing you type is learned or stored.")
+                    Text("Keys you are more likely to press next get a slightly larger invisible tap area, and gaps between keys are never dead, so near-misses still type the right letter. The keys look the same. Uses a built-in common-word list and letter-pair table; nothing you type is learned or stored.")
                 }
                 Section("Gestures") {
                     Toggle("Flick keys down for symbols", isOn: $model.settings.flickSymbols)

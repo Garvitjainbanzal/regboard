@@ -16,9 +16,9 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
     var onSwipeDelete: ((Int) -> Void)?
     /// The swipe-left-on-backspace gesture ended (or was cancelled).
     var onSwipeDeleteEnd: (() -> Void)?
-    /// Dynamic tap zones: on/off, and the letter typed just before the touch (nil = none / not a letter).
+    /// Dynamic tap zones: on/off, and the letters of the word being typed (empty = a new word starts).
     var dynamicTapZones = true
-    var previousLetter: (() -> Character?)?
+    var wordPrefix: (() -> String)?
 
     private let rowsContainer = UIView()
     private var rows: [[KeyDef]] = []
@@ -100,8 +100,8 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
             let f = k.frame
             return TapZoneKey(x: Double(f.minX), y: Double(f.minY), width: Double(f.width), height: Double(f.height), letter: letter, isTarget: isTarget)
         }
-        let prev = dynamicTapZones ? previousLetter?() : nil
-        if let i = TapZoneEngine.resolve(x: Double(p.x), y: Double(p.y), keys: keys, previous: prev, enabled: dynamicTapZones) {
+        let probs = dynamicTapZones ? NextLetterModel.distribution(prefix: wordPrefix?() ?? "") : nil
+        if let i = TapZoneEngine.resolve(x: Double(p.x), y: Double(p.y), keys: keys, probabilities: probs, enabled: dynamicTapZones) {
             return flat[i]
         }
         return super.hitTest(point, with: event)

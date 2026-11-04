@@ -11,38 +11,61 @@ public struct TapZoneKey: Equatable {
         self.x = x; self.y = y; self.width = width; self.height = height; self.letter = letter; self.isTarget = isTarget
     }
     func contains(_ px: Double, _ py: Double) -> Bool { px >= x && px < x + width && py >= y && py < y + height }
-    /// Distance from the key centre in units of half-key-size (1.0 = on the key's edge along that axis).
-    func normalizedDistance(_ px: Double, _ py: Double) -> Double {
-        let dx = (px - (x + width / 2)) / max(width / 2, 1)
-        let dy = (py - (y + height / 2)) / max(height / 2, 1)
-        return (dx * dx + dy * dy).squareRoot()
+    /// Offset from the key centre in units of the key's own width / height (0.5 = on the edge).
+    func offset(_ px: Double, _ py: Double) -> (dx: Double, dy: Double) {
+        ((px - (x + width / 2)) / max(width, 1), (py - (y + height / 2)) / max(height, 1))
     }
 }
 
-/// Dynamic tap zones: the invisible hit area of each key grows or shrinks with how likely that letter is to come next,
-/// and gaps between keys are never dead. Visible keys do not change.
+/// Dynamic tap zones. For a touch, every nearby key gets
+///
+///     score(k) = -d(k)^2 / (2 sigma^2)  +  lambda * ln P_language(k)
+///
+/// where d is the distance from the key centre in key-size units (the spatial term, a Gaussian log-likelihood) and
+/// P_language is the chance the letter comes next given the word typed so far. The highest score wins, which is the same
+/// as growing the invisible hit area of likely keys and shrinking their neighbours', while the visible keys never change.
+/// The middle of a key always belongs to that key, and gaps between keys are never dead.
 public enum TapZoneEngine {
-    /// Touches farther than this (boosted, normalised) from every key hit nothing.
-    public static let maxReach: Double = 1.6
+    /// Spatial variance in key-size units^2. Smaller = trust the finger position more.
+    public static let sigmaSquared = 0.2
+    /// How strongly language context moves the zone borders (lambda).
+    public static let languageWeight = 0.7
+    /// Probabilities are clamped to this floor, which caps how far a very unlikely key's zone can shrink.
+    public static let probabilityFloor = 0.03
+    /// Probability given to non-letter keys (digits, punctuation) when competing in a gap.
+    public static let neutralProbability = 0.05
+    /// A touch within this fraction of key size (each side of the centre) always hits that key.
+    public static let safeCore = 0.3
+    /// Keys farther than this (in key-size units) from the touch do not compete; touching beyond it hits nothing.
+    public static let maxReach = 1.5
 
     /// Index into `keys` of the key the touch at (x, y) should press, or nil if it hits nothing.
-    /// - Modifier / space keys are only pressed by touches that land directly on them or in a gap next to them.
-    /// - A touch on a character key may be redirected to a neighbouring character key that is much more likely next.
-    public static func resolve(x: Double, y: Double, keys: [TapZoneKey], previous: Character?, enabled: Bool = true) -> Int? {
+    /// - Parameter probabilities: P(next letter) for lowercase letters, or nil for no language context (pure proximity).
+    /// - Modifier / space keys are only pressed by touches that land directly on them.
+    /// - A touch on a character key may be handed to a neighbouring character key that is much more likely next.
+    public static func resolve(x: Double, y: Double, keys: [TapZoneKey], probabilities: [Character: Double]?, enabled: Bool = true) -> Int? {
         let exact = keys.firstIndex { $0.contains(x, y) }
         if let e = exact, !keys[e].isTarget { return e }
         guard enabled else { return exact }
+        if let e = exact {
+            let o = keys[e].offset(x, y)
+            if abs(o.dx) <= safeCore && abs(o.dy) <= safeCore { return e }
+        }
 
-        var best: Int? = nil, bestScore = Double.greatestFiniteMagnitude
+        var best: Int? = nil, bestScore = -Double.greatestFiniteMagnitude
         for (i, k) in keys.enumerated() {
             // Touch is on a character key: only character keys compete. In a gap: everything competes.
             if exact != nil && !k.isTarget { continue }
-            var boost = 1.0
-            if let l = k.letter { boost = BigramModel.boost(after: previous, candidate: l) }
-            let score = k.normalizedDistance(x, y) / boost
-            if score < bestScore { bestScore = score; best = i }
+            let o = k.offset(x, y)
+            let d2 = o.dx * o.dx + o.dy * o.dy
+            if d2.squareRoot() > maxReach { continue }
+            var score = -d2 / (2 * sigmaSquared)
+            if let probs = probabilities {
+                let p = k.letter.map { probs[$0] ?? 0 } ?? neutralProbability
+                score += languageWeight * log(max(p, probabilityFloor))
+            }
+            if score > bestScore { bestScore = score; best = i }
         }
-        if let b = best, bestScore <= maxReach { return b }
-        return exact
+        return best ?? exact
     }
 }

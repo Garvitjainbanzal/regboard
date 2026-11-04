@@ -35,6 +35,8 @@ final class KeyView: UIView {
     private var lastX: CGFloat = 0
     // Tracks how many character positions we have moved left via swipe-select
     // so we know how far back to delete on lift.
+    private static let swipeStart: CGFloat = 30      // leftward travel before the first word is deleted
+    private static let swipePerWord: CGFloat = 70    // extra travel for each further word
     private var swipeSelectCount: Int = 0
     private var dragged = false, swipeDeleted = false, shiftSwiped = false, flicked = false, trackpad = false
     private var selectedAlt = 0
@@ -151,16 +153,16 @@ final class KeyView: UIView {
                 flicked = true; longPressTimer?.invalidate(); preview?.removeFromSuperview(); preview = nil
             }
         case .backspace:
-            // Swipe left: every 28pt removes one more word (live); sliding back right brings words back.
+            // Swipe left: the first word goes after `swipeStart` pt, then one more per `swipePerWord` pt (live); sliding back right brings words back.
             let totalDelta = touchStart.x - p.x   // positive when swiping left
-            if totalDelta > 20 || swipeDeleted {
+            if totalDelta > Self.swipeStart || swipeDeleted {
                 if !swipeDeleted {
                     // Entering swipe mode: this is a swipe, not a tap or a hold.
                     swipeDeleted = true
                     repeatTimer?.invalidate(); longPressTimer?.invalidate()
                     repeatTimer = nil; longPressTimer = nil
                 }
-                let words = totalDelta > 20 ? 1 + Int((totalDelta - 20) / 28) : 0
+                let words = totalDelta > Self.swipeStart ? 1 + Int((totalDelta - Self.swipeStart) / Self.swipePerWord) : 0
                 if words != swipeSelectCount {
                     swipeSelectCount = words
                     onSwipeDelete?(words)

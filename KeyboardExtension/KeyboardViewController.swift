@@ -61,9 +61,10 @@ final class KeyboardViewController: UIInputViewController {
         keyboardView.onSwipeDelete = { [weak self] words in self?.applySwipeDelete(words: words) }
         keyboardView.onSwipeDeleteEnd = { [weak self] in self?.controller.syncAfterDelete() }
                 keyboardView.onHaptic = { [weak self] in self?.haptic() }
-        keyboardView.previousLetter = { [weak self] in
-            guard let c = self?.textDocumentProxy.documentContextBeforeInput?.last, c.isLetter else { return nil }
-            return c
+        keyboardView.wordPrefix = { [weak self] in
+            // Letters (and apostrophes) typed since the last space/punctuation.
+            let ctx = self?.textDocumentProxy.documentContextBeforeInput ?? ""
+            return String(ctx.reversed().prefix { $0.isLetter || $0 == "'" || $0 == "’" }.reversed())
         }
         applyTraits(); applySettings()
         controller.beginEditing()

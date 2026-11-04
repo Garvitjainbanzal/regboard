@@ -227,43 +227,61 @@ final class SettingsTests: XCTestCase {
 
 final class TapZoneTests: XCTestCase {
     // Two adjacent 30pt-wide letter keys with a 6pt gap: "h" at x 0..30, "n" at x 36..66; plus a space-like modifier below.
+    // "Safe core" (middle 60%) of "h" is x 6..24, of "n" x 42..60.
     private func keys() -> [TapZoneKey] {
         [TapZoneKey(x: 0, y: 0, width: 30, height: 40, letter: "h"),
          TapZoneKey(x: 36, y: 0, width: 30, height: 40, letter: "n"),
          TapZoneKey(x: 0, y: 52, width: 66, height: 40, letter: nil, isTarget: false)]
     }
+    private let hLikely: [Character: Double] = ["h": 0.4, "n": 0.03]
+    private let nLikely: [Character: Double] = ["h": 0.03, "n": 0.4]
+
     func testDirectHitCentre() {
-        XCTAssertEqual(TapZoneEngine.resolve(x: 15, y: 20, keys: keys(), previous: "t"), 0)
-        XCTAssertEqual(TapZoneEngine.resolve(x: 51, y: 20, keys: keys(), previous: "t"), 1)
+        XCTAssertEqual(TapZoneEngine.resolve(x: 15, y: 20, keys: keys(), probabilities: hLikely), 0)
+        XCTAssertEqual(TapZoneEngine.resolve(x: 51, y: 20, keys: keys(), probabilities: hLikely), 1)
     }
     func testGapIsNeverDead() {
-        XCTAssertNotNil(TapZoneEngine.resolve(x: 33, y: 20, keys: keys(), previous: nil))
+        XCTAssertNotNil(TapZoneEngine.resolve(x: 33, y: 20, keys: keys(), probabilities: nil))
     }
-    func testLikelyKeyWinsTheBorder() {
-        // Touch on the far edge of "h" nearest to "n" (x=29). After "t", "h" is very likely, "n" is not.
-        XCTAssertEqual(TapZoneEngine.resolve(x: 29, y: 20, keys: keys(), previous: "t"), 0)
-        // In the gap (x=31): after "t" the likelier "h" wins; after "i" the likelier "n" wins.
-        XCTAssertEqual(TapZoneEngine.resolve(x: 31, y: 20, keys: keys(), previous: "t"), 0)
-        XCTAssertEqual(TapZoneEngine.resolve(x: 31, y: 20, keys: keys(), previous: "i"), 1)
+    func testLikelyKeyWinsTheGap() {
+        XCTAssertEqual(TapZoneEngine.resolve(x: 33, y: 20, keys: keys(), probabilities: hLikely), 0)
+        XCTAssertEqual(TapZoneEngine.resolve(x: 33, y: 20, keys: keys(), probabilities: nLikely), 1)
     }
-    func testCentreOfKeyNeverStolen() {
-        XCTAssertEqual(TapZoneEngine.resolve(x: 15, y: 20, keys: keys(), previous: "i"), 0)
+    func testLikelyKeyGrowsIntoNeighbour() {
+        // x=39 is on the visible edge of "n". If "h" is far likelier the zone has grown over it; if "n" is, it hasn't.
+        XCTAssertEqual(TapZoneEngine.resolve(x: 39, y: 20, keys: keys(), probabilities: hLikely), 0)
+        XCTAssertEqual(TapZoneEngine.resolve(x: 39, y: 20, keys: keys(), probabilities: nLikely), 1)
+    }
+    func testCoreOfKeyNeverStolen() {
+        XCTAssertEqual(TapZoneEngine.resolve(x: 45, y: 20, keys: keys(), probabilities: hLikely), 1)
+        XCTAssertEqual(TapZoneEngine.resolve(x: 15, y: 20, keys: keys(), probabilities: nLikely), 0)
+    }
+    func testLikelyKeyGrowsVertically() {
+        // "d" on the home row with "e" directly above: a touch near the top of "d" goes to "e" when "e" is likely.
+        let rows = [TapZoneKey(x: 0, y: 0, width: 30, height: 40, letter: "e"),
+                    TapZoneKey(x: 0, y: 48, width: 30, height: 40, letter: "d")]
+        XCTAssertEqual(TapZoneEngine.resolve(x: 15, y: 52, keys: rows, probabilities: ["e": 0.4, "d": 0.03]), 0)
+        XCTAssertEqual(TapZoneEngine.resolve(x: 15, y: 52, keys: rows, probabilities: ["e": 0.03, "d": 0.4]), 1)
     }
     func testModifierIsOnlyHitDirectly() {
-        XCTAssertEqual(TapZoneEngine.resolve(x: 33, y: 70, keys: keys(), previous: "t"), 2)
+        XCTAssertEqual(TapZoneEngine.resolve(x: 33, y: 70, keys: keys(), probabilities: hLikely), 2)
     }
     func testFarAwayHitsNothing() {
-        XCTAssertNil(TapZoneEngine.resolve(x: 300, y: 300, keys: keys(), previous: "t"))
+        XCTAssertNil(TapZoneEngine.resolve(x: 300, y: 300, keys: keys(), probabilities: hLikely))
     }
     func testDisabledIsExactOnly() {
-        XCTAssertNil(TapZoneEngine.resolve(x: 33, y: 20, keys: keys(), previous: "t", enabled: false))
-        XCTAssertEqual(TapZoneEngine.resolve(x: 29, y: 20, keys: keys(), previous: "i", enabled: false), 0)
+        XCTAssertNil(TapZoneEngine.resolve(x: 33, y: 20, keys: keys(), probabilities: hLikely, enabled: false))
+        XCTAssertEqual(TapZoneEngine.resolve(x: 29, y: 20, keys: keys(), probabilities: nLikely, enabled: false), 0)
     }
-    func testBoostRange() {
-        XCTAssertEqual(BigramModel.boost(after: nil, candidate: "h"), 1.0)
-        XCTAssertEqual(BigramModel.boost(after: "t", candidate: "h"), BigramModel.maxBoost, accuracy: 0.0001)
-        XCTAssertEqual(BigramModel.boost(after: "q", candidate: "z"), 1.0)
-        XCTAssertEqual(BigramModel.boost(after: "T", candidate: "H"), BigramModel.maxBoost, accuracy: 0.0001)
+    func testNextLetterModel() {
+        let start = NextLetterModel.distribution(prefix: "")
+        XCTAssertEqual(start.values.reduce(0, +), 1, accuracy: 0.05)
+        let hel = NextLetterModel.distribution(prefix: "hel")      // help, hello, held
+        XCTAssertGreaterThan(hel["p"] ?? 0, hel["z"] ?? 0); XCTAssertGreaterThan(hel["l"] ?? 0, hel["z"] ?? 0)
+        let th = NextLetterModel.distribution(prefix: "Th")        // case-insensitive
+        XCTAssertGreaterThan(th["e"] ?? 0, th["z"] ?? 0)
+        XCTAssertGreaterThan(NextLetterModel.distribution(prefix: "q")["u"] ?? 0, 0.9)
+        XCTAssertFalse(NextLetterModel.distribution(prefix: "zzq").isEmpty)   // unknown prefix falls back to letter pairs
     }
     func testOldSettingsStillDecode() throws {
         let json = #"{"accentID":"blue","showNumberRow":false}"#.data(using: .utf8)!

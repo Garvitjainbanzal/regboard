@@ -3,11 +3,6 @@ import Foundation
 /// Static English letter-bigram table used ONLY to resize invisible tap zones (never to suggest or change text).
 /// Values are approximate frequency per 10,000 letter pairs. Nothing is learned from the user and nothing is stored.
 public enum BigramModel {
-    /// Largest enlargement of a key's tap zone (1.5 = up to 50% "closer" to the finger).
-    public static let maxBoost: Double = 1.5
-    /// Frequency at/above which a pair gets the full boost.
-    private static let saturation: Double = 400
-
     // [preceding letter: [following letter: frequency per 10,000]]
     private static let table: [Character: [Character: UInt16]] = [
         "a": ["n":312,"t":284,"l":243,"r":228,"s":206,"d":176,"c":152,"m":134,"i":121,"e":99,"b":82,"p":74,"y":67,"g":63,"v":58,"k":43,"f":38,"w":34,"u":28,"x":9,"j":6,"z":5,"q":2],
@@ -38,10 +33,10 @@ public enum BigramModel {
         "z": ["e":342,"i":287,"a":221,"o":198,"z":87,"u":65,"l":43,"y":32],
     ]
 
-    /// Multiplier in 1.0...maxBoost for `candidate` given the letter typed just before it. 1.0 = no change.
-    public static func boost(after previous: Character?, candidate: Character) -> Double {
-        guard let prev = previous?.lowercased().first, let cand = candidate.lowercased().first,
-              let f = table[prev]?[cand] else { return 1.0 }
-        return 1.0 + min(Double(f) / saturation, 1.0) * (maxBoost - 1.0)
+    /// P(next letter | previous letter), normalised over the letters in the table row; nil if the row is unknown.
+    static func distribution(after previous: Character) -> [Character: Double]? {
+        guard let key = previous.lowercased().first, let row = table[key], !row.isEmpty else { return nil }
+        let total = row.values.reduce(0) { $0 + Double($1) }
+        return row.mapValues { Double($0) / total }
     }
 }
