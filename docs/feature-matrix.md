@@ -8,9 +8,9 @@ Status: **Implemented** (coded; **not built or run** in this Linux environment) 
 | QWERTY + number row, shift, caps lock | Implemented (approximation of common behaviour) | unit-tested logic |
 | Backspace + hold-to-repeat | Implemented | fixed 0.07 s repeat; no acceleration |
 | Long-press alternates popover | Implemented | accents per language; slide to choose |
-| Numbers / symbols pages | Implemented | number panel follows the layout supplied by the user (screenshot): 1–0 · `@ # ₹ _ & - + ( ) /` · `=\< * " ' : ; ! ? ⌫` · ABC (round) , language-space . enter (light-accent, dark arrow). Second page (`=\<`) is our own symbol set |
+| Numbers / symbols pages | Implemented | number panel follows the layout supplied by the user (screenshot): 1–0 · `@ # ₹ _ & - + ( ) /` · `=\< * " ' : ; ! ? ⌫` · ABC (round) , language-space . enter (blank key, modifier colour). Second page (`=\<`) is our own symbol set |
 | Layouts: EN, ES, DE QWERTZ, FR AZERTY | Implemented | layouts only; no dictionaries |
-| Themes light/dark/system + accent | Implemented | original palettes |
+| Theme | Implemented | single dark theme (no accent colours) |
 | Key height setting (70–140%), landscape sizing | Implemented | |
 | Double-space full stop (toggle) | Implemented | fixed rule, own setting |
 | Auto punctuation (toggle) | Implemented | space-before/after rules, own setting |

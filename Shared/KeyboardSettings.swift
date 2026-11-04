@@ -7,8 +7,6 @@ public enum Handedness: String, Codable, CaseIterable, Identifiable {
 }
 
 public struct KeyboardSettings: Codable, Equatable {
-    public var themeMode: ThemeMode = .system
-    public var accentID: String = "blue"
     public var language: LanguageLayout = .englishQWERTY
     public var showNumberRow = true
     public var heightScale: Double = 1.0          // 0.7 ... 1.4
@@ -27,8 +25,6 @@ public struct KeyboardSettings: Codable, Equatable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = KeyboardSettings()
-        themeMode = try c.decodeIfPresent(ThemeMode.self, forKey: .themeMode) ?? d.themeMode
-        accentID = try c.decodeIfPresent(String.self, forKey: .accentID) ?? d.accentID
         language = try c.decodeIfPresent(LanguageLayout.self, forKey: .language) ?? d.language
         showNumberRow = try c.decodeIfPresent(Bool.self, forKey: .showNumberRow) ?? d.showNumberRow
         heightScale = try c.decodeIfPresent(Double.self, forKey: .heightScale) ?? d.heightScale

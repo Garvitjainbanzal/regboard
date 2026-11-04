@@ -172,7 +172,7 @@ final class LayoutTests: XCTestCase {
         XCTAssertEqual(labels(n[2]), ["=\\<", "*", "\"", "'", ":", ";", "!", "?", "⌫"])
         XCTAssertEqual(n[2].first?.action, .switchToSymbols); XCTAssertEqual(n[2].last?.action, .backspace)
         XCTAssertEqual(n[3].map(\.action), [.switchToLetters, .character(","), .space, .character("."), .returnKey])
-        XCTAssertEqual(n[3][0].label, "ABC"); XCTAssertTrue(n[3][0].pill)
+        XCTAssertEqual(n[3][0].label, "ABC"); XCTAssertFalse(n[3][0].pill)
         XCTAssertEqual(n[3][2].label, "English"); XCTAssertNotNil(n[3][2].badge)
         XCTAssertTrue(n[3][4].pill)
         XCTAssertGreaterThan(n[3][2].widthWeight, n[3][1].widthWeight * 3)
@@ -198,11 +198,11 @@ final class SettingsTests: XCTestCase {
     func testRoundTripAndClamp() {
         let d = freshDefaults(); let s = SettingsStore(defaults: d)
         XCTAssertEqual(s.load(), KeyboardSettings())
-        var v = KeyboardSettings(); v.themeMode = .dark; v.accentID = "pink"; v.language = .germanQWERTZ; v.heightScale = 5
+        var v = KeyboardSettings(); v.language = .germanQWERTZ; v.heightScale = 5
         v.doubleSpacePeriod = false; v.autoPunctuation = false; v.oneHanded = .right; v.showNumberRow = false
         s.save(v)
         let r = SettingsStore(defaults: d).load()
-        XCTAssertEqual(r.themeMode, .dark); XCTAssertEqual(r.language, .germanQWERTZ); XCTAssertEqual(r.heightScale, 1.4)
+        XCTAssertEqual(r.language, .germanQWERTZ); XCTAssertEqual(r.heightScale, 1.4)
         XCTAssertFalse(r.doubleSpacePeriod); XCTAssertFalse(r.autoPunctuation); XCTAssertEqual(r.oneHanded, .right); XCTAssertFalse(r.showNumberRow)
         v.heightScale = 0.1; s.save(v); XCTAssertEqual(s.load().heightScale, 0.7)
     }

@@ -110,8 +110,7 @@ final class KeyboardViewController: UIInputViewController {
         // full key-row rebuild on every host-app keystroke (e.g. live-search fields),
         // we check whether the derived traits or palette actually changed before doing work.
         let newTraits = buildTraits()
-        let newPalette = ThemePalette.palette(mode: settings.themeMode, systemIsDark: systemIsDark())
-        guard newTraits != controller.traits || newPalette != keyboardView.palette else { return }
+        guard newTraits != controller.traits else { return }
         applyTraits(); applySettings()
     }
     override func traitCollectionDidChange(_ previous: UITraitCollection?) {
@@ -142,19 +141,13 @@ final class KeyboardViewController: UIInputViewController {
         controller.needsGlobe = needsInputModeSwitchKey
     }
 
-    private func systemIsDark() -> Bool {
-        if textDocumentProxy.keyboardAppearance == .dark { return true }
-        return traitCollection.userInterfaceStyle == .dark
-    }
-
     private func applySettings() {
         controller.apply(settings: settings)
-        let pal = ThemePalette.palette(mode: settings.themeMode, systemIsDark: systemIsDark())
+        let pal = ThemePalette.dark
         keyboardView.soundEnabled = settings.soundEnabled
         keyboardView.longPressDelay = settings.longPressDelay
         keyboardView.oneHanded = settings.oneHanded
         keyboardView.dynamicTapZones = settings.dynamicTapZones
-        keyboardView.accent = AccentColor.named(settings.accentID).color.ui
         keyboardView.palette = pal
         emojiPanel?.palette = pal
         // Only trigger a constraint update when the target height has actually changed,

@@ -1,27 +1,10 @@
 import SwiftUI
 
-private func color(_ c: RGBA) -> Color { Color(red: c.r, green: c.g, blue: c.b, opacity: c.a) }
-
 struct AppearanceView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
         NavigationStack {
             Form {
-                Section("Theme") {
-                    Picker("Mode", selection: $model.settings.themeMode) {
-                        ForEach(ThemeMode.allCases) { Text($0.rawValue.capitalized).tag($0) }
-                    }.pickerStyle(.segmented)
-                }
-                Section("Accent colour") {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6)) {
-                        ForEach(AccentColor.all) { a in
-                            Circle().fill(color(a.color)).frame(width: 38, height: 38)
-                                .overlay(Circle().stroke(Color.primary, lineWidth: model.settings.accentID == a.id ? 3 : 0))
-                                .onTapGesture { model.settings.accentID = a.id }
-                                .accessibilityLabel(a.name).accessibilityAddTraits(model.settings.accentID == a.id ? .isSelected : [])
-                        }
-                    }
-                }
                 Section("Size") {
                     VStack(alignment: .leading) {
                         Text("Keyboard height: \(Int(model.settings.heightScale * 100))%")

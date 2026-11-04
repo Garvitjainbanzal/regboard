@@ -153,7 +153,7 @@ public final class InputController {
 
     public var layoutRows: [[KeyDef]] {
         KeyboardLayouts.rows(page: page, language: settings.language, shifted: shift.isUppercase,
-                             showNumberRow: settings.showNumberRow, needsGlobe: needsGlobe, returnLabel: traits.returnKeyLabel,
+                             showNumberRow: settings.showNumberRow, needsGlobe: needsGlobe,
                              flickHints: settings.flickSymbols)
     }
 }

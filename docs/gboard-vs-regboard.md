@@ -34,7 +34,7 @@ Glide typing (glide trail, dynamic suggestion preview, auto-commit) · Glide del
 | Emoji + Kitchen/stickers/GIF | yes | basic emoji only | Kitchen/GIF need network + licensing |
 | Voice typing | yes | no | extensions cannot use the mic |
 | Translate/Proofread/Writing tools | yes (cloud/AICore) | no | needs approved service; against no-network policy |
-| Themes | many, images | light/dark + 6 accents | |
+| Themes | many, images | single dark theme | |
 | Telemetry / federated learning | yes (opt-in) | none by design | |
 | Languages | 84 | 4 layouts | |
 

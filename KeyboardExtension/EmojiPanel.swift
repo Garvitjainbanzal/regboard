@@ -5,7 +5,7 @@ final class EmojiPanel: UIView, UICollectionViewDataSource, UICollectionViewDele
     var onPick: ((String) -> Void)?
     var onBack: (() -> Void)?
     var onDelete: (() -> Void)?
-    var palette: ThemePalette = .light { didSet { restyle() } }
+    var palette: ThemePalette = .dark { didSet { restyle() } }
     var recents = RecentEmojiStore()
 
     private var sections: [EmojiCategory] = []

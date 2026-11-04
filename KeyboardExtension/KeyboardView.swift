@@ -4,8 +4,7 @@ import UIKit
 final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
     var enableInputClicksWhenVisible: Bool { true }
 
-    var palette: ThemePalette = .light { didSet { restyle() } }
-    var accent: UIColor = .systemBlue { didSet { restyle() } }
+    var palette: ThemePalette = .dark { didSet { restyle() } }
     var soundEnabled = true
     var longPressDelay: TimeInterval = 0.35
     var onKey: ((KeyDef) -> Void)?
@@ -29,8 +28,8 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
     var oneHanded: Handedness = .off { didSet { setNeedsLayout() } }
 
     // iOS system keyboard metrics
-    private let rowSpacing: CGFloat = 12   // vertical gap between rows
-    private let keySpacing: CGFloat = 6    // horizontal gap between keys
+    private let rowSpacing: CGFloat = 8   // vertical gap between rows
+    private let keySpacing: CGFloat = 4    // horizontal gap between keys
     private let inset: CGFloat = 4         // left/right edge margin
 
     init() {
@@ -56,7 +55,7 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
     }
 
     private func makeKey(_ d: KeyDef) -> KeyView {
-        let k = KeyView(def: d, palette: palette, accent: accent)
+        let k = KeyView(def: d, palette: palette)
         k.soundEnabled = soundEnabled; k.longPressDelay = longPressDelay
         k.onTap = { [weak self] in self?.onKey?($0) }
         k.onAlternate = { [weak self] in self?.onAlternate?($0) }
@@ -73,7 +72,7 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
     func restyle() {
         backgroundColor = palette.background.ui
         keyViews.flatMap { $0 }.forEach {
-            $0.palette = palette; $0.accent = accent
+            $0.palette = palette
             $0.soundEnabled = soundEnabled; $0.longPressDelay = longPressDelay
         }
     }

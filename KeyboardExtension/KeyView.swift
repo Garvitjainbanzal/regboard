@@ -5,8 +5,7 @@ import UIKit
 final class KeyView: UIView {
     let def: KeyDef
     var palette: ThemePalette { didSet { applyColors() } }
-    var accent: UIColor { didSet { applyColors() } }
-    var shiftState: ShiftState = .off { didSet { applyColors(); updateLabel() } }
+        var shiftState: ShiftState = .off { didSet { applyColors(); updateLabel() } }
     var onTap: ((KeyDef) -> Void)?
     var onAlternate: ((String) -> Void)?
     var onRepeat: (() -> Void)?
@@ -40,8 +39,8 @@ final class KeyView: UIView {
     private var selectedAlt = 0
     private var pressed = false { didSet { applyColors() } }
 
-    init(def: KeyDef, palette: ThemePalette, accent: UIColor) {
-        self.def = def; self.palette = palette; self.accent = accent
+    init(def: KeyDef, palette: ThemePalette) {
+        self.def = def; self.palette = palette
         super.init(frame: .zero)
         layer.cornerRadius = 6; layer.masksToBounds = false
         layer.shadowColor = UIColor.black.cgColor; layer.shadowOpacity = 0.25; layer.shadowRadius = 0; layer.shadowOffset = CGSize(width: 0, height: 1)
@@ -72,7 +71,7 @@ final class KeyView: UIView {
 
     static func accessibilityName(for d: KeyDef) -> String {
         switch d.action {
-        case .shift: return "Shift"; case .backspace: return "Delete"; case .space: return "Space"; case .returnKey: return d.label
+        case .shift: return "Shift"; case .backspace: return "Delete"; case .space: return "Space"; case .returnKey: return "Return"
         case .switchToLetters: return "Letters"; case .switchToNumbers: return "Numbers"; case .switchToSymbols: return "Symbols"
         case .nextKeyboard: return "Next keyboard"; case .emoji: return "Emoji"; case .character(let s): return s
         case .hideKeyboard: return "Hide keyboard"
@@ -82,7 +81,6 @@ final class KeyView: UIView {
     private func updateLabel() {
         var text = def.label
         if def.action == .shift { text = shiftState == .capsLock ? "⇪" : "⇧" }
-        if def.action == .returnKey && def.label == "return" { text = "↵" }
         if def.action == .space && trackpad { text = "◀  ▶" }
         label.text = text
         let isText = text.count > 1 && def.action != .space
@@ -95,13 +93,11 @@ final class KeyView: UIView {
     private func applyColors() {
         let highlighted = def.action == .shift && shiftState != .off
         var bg = def.isModifier ? palette.modifierKey.ui : palette.key.ui
-        if def.action == .returnKey { bg = accent.withAlphaComponent(0.35) }        // light accent, dark arrow
-        if def.action == .switchToLetters || def.action == .switchToNumbers || def.action == .switchToSymbols { bg = accent.withAlphaComponent(0.25) }
-        if highlighted { bg = palette.key.ui }
+        if highlighted { bg = shiftState == .capsLock ? palette.selection.ui : palette.key.ui }
         if pressed { bg = def.isModifier ? palette.key.ui : palette.modifierKey.ui }
-        if trackpad { bg = accent.withAlphaComponent(0.35) }
+        if trackpad { bg = palette.modifierKey.ui }
         backgroundColor = bg
-        label.textColor = def.action == .returnKey ? accent.darker() : (highlighted && shiftState == .capsLock ? accent : palette.keyText.ui)
+        label.textColor = palette.keyText.ui
         hintLabel.textColor = palette.keyText.ui.withAlphaComponent(0.55)
         badgeLabel.textColor = palette.keyText.ui.withAlphaComponent(0.55)
     }
@@ -277,15 +273,6 @@ final class KeyView: UIView {
     }
     private func highlightAlt(_ idx: Int) {
         selectedAlt = idx
-        for (i, l) in altLabels.enumerated() { l.backgroundColor = i == idx ? accent : .clear; l.textColor = i == idx ? .white : palette.keyText.ui }
-    }
-}
-
-extension UIColor {
-    /// A darker shade, used for the arrow on the light-accent return key.
-    func darker(by f: CGFloat = 0.35) -> UIColor {
-        var h: CGFloat = 0, sat: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        guard getHue(&h, saturation: &sat, brightness: &b, alpha: &a) else { return self }
-        return UIColor(hue: h, saturation: min(1, sat + 0.1), brightness: b * (1 - f), alpha: a)
+        for (i, l) in altLabels.enumerated() { l.backgroundColor = i == idx ? palette.selection.ui : .clear; l.textColor = i == idx ? .white : palette.keyText.ui }
     }
 }

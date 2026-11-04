@@ -90,7 +90,7 @@ public enum KeyboardLayouts {
 
     /// Builds rows for a page. `shifted` uppercases letter keys. `showNumberRow` adds a 1–0 row above letters.
     public static func rows(page: LayoutPage, language: LanguageLayout, shifted: Bool,
-                            showNumberRow: Bool, needsGlobe: Bool, returnLabel: String = "return",
+                            showNumberRow: Bool, needsGlobe: Bool,
                             flickHints: Bool = true) -> [[KeyDef]] {
         var rows: [[KeyDef]] = []
         switch page {
@@ -121,7 +121,7 @@ public enum KeyboardLayouts {
         }
         var bottom: [KeyDef] = []
         let spaceName = language.spaceLabel
-        let ret = KeyDef(.returnKey, label: returnLabel, pill: true, widthWeight: 1.8)
+        let ret = KeyDef(.returnKey, label: "", pill: true, widthWeight: 1.8)
         if page == .letters {
             bottom.append(KeyDef(.switchToNumbers, label: "123", widthWeight: 1.3))
             if needsGlobe { bottom.append(KeyDef(.nextKeyboard, label: "🌐", widthWeight: 1.0)) }
@@ -133,7 +133,7 @@ public enum KeyboardLayouts {
             bottom.append(KeyDef(.character("."), label: ".", alternates: ["…", ",", "?", "!", "⌄"], widthWeight: 0.95))
         } else {
             // Number / symbol panel: ABC (round) · , · space-with-language-label (+ "1 2 3 4" badge) · . · enter
-            bottom.append(KeyDef(.switchToLetters, label: "ABC", pill: true, widthWeight: 1.4))
+            bottom.append(KeyDef(.switchToLetters, label: "ABC", widthWeight: 1.4))
             if needsGlobe { bottom.append(KeyDef(.nextKeyboard, label: "🌐", widthWeight: 0.9)) }
             bottom.append(KeyDef(.character(","), label: ",", widthWeight: 0.8))
             bottom.append(KeyDef(.space, label: spaceName, badge: "1 2\n3 4", widthWeight: needsGlobe ? 3.4 : 4.4))
