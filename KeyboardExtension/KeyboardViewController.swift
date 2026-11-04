@@ -26,6 +26,9 @@ final class KeyboardViewController: UIInputViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        // Single dark theme: force dark so the system keyboard background is dark regardless of the host app.
+        overrideUserInterfaceStyle = .dark
+        view.overrideUserInterfaceStyle = .dark
         settings = settingsStore.load()
         adapter.vc = self
         controller = InputController(proxy: adapter, settings: settings)
@@ -43,12 +46,20 @@ final class KeyboardViewController: UIInputViewController {
             keyboardView.topAnchor.constraint(equalTo: view.topAnchor),
             keyboardView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
-        keyboardView.onKey = { [weak self] def in self?.controller.handle(def.action) }
+        keyboardView.onKey = { [weak self] def in
+            guard let self else { return }
+            if def.action == .backspace {
+                // Snapshot for the swipe-left gesture (see SwipeDelete); the tap itself removes one character.
+                let ctx = self.textDocumentProxy.documentContextBeforeInput ?? ""
+                self.swipeDelete = SwipeDelete(context: ctx, alreadyRemoved: ctx.isEmpty ? 0 : 1)
+            }
+            self.controller.handle(def.action)
+        }
         keyboardView.onAlternate = { [weak self] s in self?.controller.insertAlternate(s) }
         keyboardView.onRepeatDelete = { [weak self] in self?.controller.repeatDelete() }
         keyboardView.onSpaceDrag = { [weak self] n in self?.controller.moveCursor(by: n) }
-        keyboardView.onSwipeSelectChars = { [weak self] n in self?.textDocumentProxy.adjustTextPosition(byCharacterOffset: n) }
-        keyboardView.onCommitSwipeDelete = { [weak self] in self?.commitSwipeDelete() }
+        keyboardView.onSwipeDelete = { [weak self] words in self?.applySwipeDelete(words: words) }
+        keyboardView.onSwipeDeleteEnd = { [weak self] in self?.controller.syncAfterDelete() }
                 keyboardView.onHaptic = { [weak self] in self?.haptic() }
         keyboardView.previousLetter = { [weak self] in
             guard let c = self?.textDocumentProxy.documentContextBeforeInput?.last, c.isLetter else { return nil }
@@ -172,22 +183,14 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     // MARK: Swipe-delete
-    /// Called when the user lifts their finger after a swipe-left on backspace.
-    /// At this point the proxy has moved the cursor left by N characters (which
-    /// shows a selection in the host app). We delete backward once per selected
-    /// character, then let the InputController sync shift state.
-    private func commitSwipeDelete() {
-        // UITextDocumentProxy exposes `selectedText` when text is selected.
-        // We delete the selection by calling deleteBackward() once — on iOS 16+
-        // with a selection active this removes the whole selection in one call.
-        // On older OS versions it may only remove one character, so we call
-        // controller.deleteWord() as a fallback which also cleans up shift state.
-        if let sel = textDocumentProxy.selectedText, !sel.isEmpty {
-            textDocumentProxy.deleteBackward()
-        } else {
-            controller.deleteWord()
-        }
-        controller.textContextChanged()
+    /// Swipe left on backspace deletes words live; sliding back types them again (see `SwipeDelete`).
+    private var swipeDelete: SwipeDelete?
+    private func applySwipeDelete(words: Int) {
+        guard var plan = swipeDelete else { return }
+        let step = plan.plan(words: words)
+        swipeDelete = plan
+        for _ in 0..<step.deletes { textDocumentProxy.deleteBackward() }
+        if !step.insert.isEmpty { textDocumentProxy.insertText(step.insert) }
     }
 
     // MARK: Emoji

@@ -12,11 +12,10 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
     var onRepeatDelete: (() -> Void)?
     var onSpaceDrag: ((Int) -> Void)?
     var onHaptic: (() -> Void)?
-    /// Called during swipe-left on backspace with the cursor offset to apply (negative = move left).
-    /// This causes the host field to show a live selection.
-    var onSwipeSelectChars: ((Int) -> Void)?
-    /// Called when the swipe-left-on-backspace gesture ends — delete the selection.
-    var onCommitSwipeDelete: (() -> Void)?
+    /// Swipe-left on backspace: target number of words to have deleted so far (0 restores everything).
+    var onSwipeDelete: ((Int) -> Void)?
+    /// The swipe-left-on-backspace gesture ended (or was cancelled).
+    var onSwipeDeleteEnd: (() -> Void)?
     /// Dynamic tap zones: on/off, and the letter typed just before the touch (nil = none / not a letter).
     var dynamicTapZones = true
     var previousLetter: (() -> Character?)?
@@ -63,14 +62,15 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
         k.onSpaceDrag = { [weak self] in self?.onSpaceDrag?($0) }
         k.onHaptic = { [weak self] in self?.onHaptic?() }
         k.onTrackpadChanged = { [weak self] on in self?.setTrackpad(on) }
-        k.onSwipeSelectChars = { [weak self] in self?.onSwipeSelectChars?($0) }
-        k.onCommitSwipeDelete = { [weak self] in self?.onCommitSwipeDelete?() }
+        k.onSwipeDelete = { [weak self] in self?.onSwipeDelete?($0) }
+        k.onSwipeDeleteEnd = { [weak self] in self?.onSwipeDeleteEnd?() }
         k.onShiftRelease = { [weak self] p in self?.shiftRelease(at: p) }
         return k
     }
 
     func restyle() {
-        backgroundColor = palette.background.ui
+        // Transparent: the UIInputView(.keyboard) material supplies the native rounded system background.
+        backgroundColor = .clear
         keyViews.flatMap { $0 }.forEach {
             $0.palette = palette
             $0.soundEnabled = soundEnabled; $0.longPressDelay = longPressDelay

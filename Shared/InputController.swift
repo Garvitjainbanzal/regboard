@@ -101,6 +101,9 @@ public final class InputController {
         updateShiftFromContext(afterAction: .backspace); notify()
     }
 
+    /// Re-syncs shift/auto-capitalisation after text was removed outside `handle` (swipe-delete).
+    public func syncAfterDelete() { lastWasSpace = false; updateShiftFromContext(afterAction: .backspace); notify() }
+
     /// Repeating delete used by long-press.
     public func repeatDelete() { lastWasSpace = false; proxy.deleteBackward(); updateShiftFromContext(afterAction: .backspace); notify() }
 

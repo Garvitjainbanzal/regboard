@@ -270,4 +270,29 @@ final class TapZoneTests: XCTestCase {
         let s = try JSONDecoder().decode(KeyboardSettings.self, from: json)
         XCTAssertFalse(s.showNumberRow); XCTAssertTrue(s.dynamicTapZones)
     }
+
+    // MARK: Swipe-delete
+    /// Applies a plan to a string the way the keyboard does: backspaces, then typed text.
+    private func apply(_ plan: (deletes: Int, insert: String), to text: inout String) {
+        text.removeLast(plan.deletes); text += plan.insert
+    }
+    func testSwipeDeleteRemovesWholeWordsAndRestores() {
+        let original = "hello big world"
+        var text = String(original.dropLast())            // touch-down already deleted "d"
+        var sd = SwipeDelete(context: original, alreadyRemoved: 1)
+        apply(sd.plan(words: 1), to: &text); XCTAssertEqual(text, "hello big ")
+        apply(sd.plan(words: 2), to: &text); XCTAssertEqual(text, "hello ")
+        apply(sd.plan(words: 3), to: &text); XCTAssertEqual(text, "")
+        apply(sd.plan(words: 9), to: &text); XCTAssertEqual(text, "")          // past the start is a no-op
+        apply(sd.plan(words: 1), to: &text); XCTAssertEqual(text, "hello big ")  // sliding back brings words back
+        apply(sd.plan(words: 0), to: &text); XCTAssertEqual(text, original)       // cancel restores everything
+    }
+    func testSwipeDeleteTakesTrailingSpacesAndPunctuation() {
+        var text = "Hi there!  "
+        var sd = SwipeDelete(context: "Hi there!  ", alreadyRemoved: 0)
+        apply(sd.plan(words: 1), to: &text); XCTAssertEqual(text, "Hi there")
+        apply(sd.plan(words: 2), to: &text); XCTAssertEqual(text, "Hi ")
+        var empty = SwipeDelete(context: "", alreadyRemoved: 0)
+        XCTAssertEqual(empty.plan(words: 3).deletes, 0)
+    }
 }
