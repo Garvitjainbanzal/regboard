@@ -34,6 +34,7 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
     init() {
         super.init(frame: .zero, inputViewStyle: .keyboard)
         allowsSelfSizing = true
+        isMultipleTouchEnabled = true   // touches are routed here, so overlapping fingers (two-thumb typing) must all arrive
         addSubview(rowsContainer)
         restyle()
     }
@@ -83,12 +84,22 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
             if case .character(let s) = k.def.action, k.convert(k.bounds, to: nil).contains(p) { onAlternate?(s.uppercased()); return }
         }
     }
-        /// Chooses the key for a touch using adaptive invisible hit areas (see `TapZoneEngine`).
-    /// Runs once per touch-down; later movement stays with the chosen key, so swipes/long-presses are unaffected.
+    // MARK: Touch routing
+    // The keyboard view itself receives every touch inside it (including the gaps and margins between keys) and hands it
+    // to the key chosen by the tap-zone engine. Relying on hitTest to return a key that is physically elsewhere left gap
+    // touches dead on device, so routing is done explicitly here instead.
+    private var touchTargets: [ObjectIdentifier: KeyView] = [:]
+
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         guard !isHidden, isUserInteractionEnabled, alpha > 0.01, self.point(inside: point, with: event) else { return nil }
+        return self
+    }
+
+    /// Chooses the key for a touch using adaptive invisible hit areas (see `TapZoneEngine`).
+    /// Runs once per touch-down; later movement stays with the chosen key, so swipes/long-presses are unaffected.
+    private func key(at point: CGPoint) -> KeyView? {
         let flat = keyViews.flatMap { $0 }
-        guard !flat.isEmpty else { return super.hitTest(point, with: event) }
+        guard !flat.isEmpty else { return nil }
         let p = convert(point, to: rowsContainer)
         let keys = flat.map { k -> TapZoneKey in
             var letter: Character? = nil
@@ -101,10 +112,29 @@ final class KeyboardView: UIInputView, UIInputViewAudioFeedback {
             return TapZoneKey(x: Double(f.minX), y: Double(f.minY), width: Double(f.width), height: Double(f.height), letter: letter, isTarget: isTarget)
         }
         let probs = dynamicTapZones ? NextLetterModel.distribution(prefix: wordPrefix?() ?? "") : nil
-        if let i = TapZoneEngine.resolve(x: Double(p.x), y: Double(p.y), keys: keys, probabilities: probs, enabled: dynamicTapZones) {
-            return flat[i]
+        guard let i = TapZoneEngine.resolve(x: Double(p.x), y: Double(p.y), keys: keys, probabilities: probs, enabled: dynamicTapZones) else { return nil }
+        return flat[i]
+    }
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        for t in touches {
+            guard let key = key(at: t.location(in: self)) else { continue }
+            touchTargets[ObjectIdentifier(t)] = key
+            key.touchesBegan([t], with: event)
         }
-        return super.hitTest(point, with: event)
+    }
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        for t in touches { touchTargets[ObjectIdentifier(t)]?.touchesMoved([t], with: event) }
+    }
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        for t in touches {
+            touchTargets.removeValue(forKey: ObjectIdentifier(t))?.touchesEnded([t], with: event)
+        }
+    }
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        for t in touches {
+            touchTargets.removeValue(forKey: ObjectIdentifier(t))?.touchesCancelled([t], with: event)
+        }
     }
 
     override func layoutSubviews() {

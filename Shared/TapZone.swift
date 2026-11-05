@@ -10,7 +10,13 @@ public struct TapZoneKey: Equatable {
     public init(x: Double, y: Double, width: Double, height: Double, letter: Character? = nil, isTarget: Bool = true) {
         self.x = x; self.y = y; self.width = width; self.height = height; self.letter = letter; self.isTarget = isTarget
     }
-    func contains(_ px: Double, _ py: Double) -> Bool { px >= x && px < x + width && py >= y && py < y + height }
+    /// Distance from the touch to the key's outline in key-size units (0 when inside).
+    func outlineDistance(_ px: Double, _ py: Double) -> Double {
+        let dx = max(x - px, px - (x + width), 0) / max(width, 1)
+        let dy = max(y - py, py - (y + height), 0) / max(height, 1)
+        return (dx * dx + dy * dy).squareRoot()
+    }
+    func contains(_ px: Double, _ py: Double) { px >= x && px < x + width && py >= y && py < y + height }
     /// Offset from the key centre in units of the key's own width / height (0.5 = on the edge).
     func offset(_ px: Double, _ py: Double) -> (dx: Double, dy: Double) {
         ((px - (x + width / 2)) / max(width, 1), (py - (y + height / 2)) / max(height, 1))
@@ -32,17 +38,20 @@ public enum TapZoneEngine {
     public static let languageWeight = 0.7
     /// Probabilities are clamped to this floor, which caps how far a very unlikely key's zone can shrink.
     public static let probabilityFloor = 0.03
-    /// Probability given to non-letter keys (digits, punctuation) when competing in a gap.
+    /// Probability given to non-letter character keys (digits, punctuation) in the language contest.
     public static let neutralProbability = 0.05
     /// A touch within this fraction of key size (each side of the centre) always hits that key.
     public static let safeCore = 0.3
     /// Keys farther than this (in key-size units) from the touch do not compete; touching beyond it hits nothing.
     public static let maxReach = 1.5
+    /// In a gap or margin, a modifier / space key is pressed only when it is the closest key and within this outline distance.
+    public static let modifierReach = 0.75
 
     /// Index into `keys` of the key the touch at (x, y) should press, or nil if it hits nothing.
     /// - Parameter probabilities: P(next letter) for lowercase letters, or nil for no language context (pure proximity).
-    /// - Modifier / space keys are only pressed by touches that land directly on them.
-    /// - A touch on a character key may be handed to a neighbouring character key that is much more likely next.
+    /// - Modifier / space keys are pressed by touches directly on them, or in a gap when one is the closest key. They never
+    ///   take part in the language contest, so a missed letter can't be swallowed by Shift, Backspace or Space.
+    /// - A touch on a character key, or in a gap between character keys, may go to the neighbour that is likelier next.
     public static func resolve(x: Double, y: Double, keys: [TapZoneKey], probabilities: [Character: Double]?, enabled: Bool = true) -> Int? {
         let exact = keys.firstIndex { $0.contains(x, y) }
         if let e = exact, !keys[e].isTarget { return e }
@@ -52,10 +61,18 @@ public enum TapZoneEngine {
             if abs(o.dx) <= safeCore && abs(o.dy) <= safeCore { return e }
         }
 
+        if exact == nil {
+            var nearest: Int? = nil, nearestD = Double.greatestFiniteMagnitude
+            for (i, k) in keys.enumerated() {
+                let d = k.outlineDistance(x, y)
+                if d < nearestD { nearestD = d; nearest = i }
+            }
+            if let n = nearest, !keys[n].isTarget, nearestD <= modifierReach { return n }
+        }
+
         var best: Int? = nil, bestScore = -Double.greatestFiniteMagnitude
         for (i, k) in keys.enumerated() {
-            // Touch is on a character key: only character keys compete. In a gap: everything competes.
-            if exact != nil && !k.isTarget { continue }
+            if !k.isTarget { continue }
             let o = k.offset(x, y)
             let d2 = o.dx * o.dx + o.dy * o.dy
             if d2.squareRoot() > maxReach { continue }

@@ -266,6 +266,17 @@ final class TapZoneTests: XCTestCase {
     func testModifierIsOnlyHitDirectly() {
         XCTAssertEqual(TapZoneEngine.resolve(x: 33, y: 70, keys: keys(), probabilities: hLikely), 2)
     }
+    func testGapNextToModifierGoesToModifier() {
+        // 6pt above the space-like key and 3pt from both letters: the modifier is the closest key.
+        XCTAssertEqual(TapZoneEngine.resolve(x: 33, y: 46, keys: keys(), probabilities: hLikely), 2)
+    }
+    func testMissedLetterIsNotSwallowedByModifier() {
+        // Margin just left of "h" with a Shift-like key farther away: the letter must win, even if its probability is tiny.
+        let ks = [TapZoneKey(x: 0, y: 0, width: 30, height: 40, letter: "h"),
+                  TapZoneKey(x: -40, y: 44, width: 30, height: 40, letter: nil, isTarget: false)]
+        XCTAssertEqual(TapZoneEngine.resolve(x: -3, y: 30, keys: ks, probabilities: ["h": 0.001]), 0)
+        XCTAssertEqual(TapZoneEngine.resolve(x: -3, y: 30, keys: ks, probabilities: nil), 0)
+    }
     func testFarAwayHitsNothing() {
         XCTAssertNil(TapZoneEngine.resolve(x: 300, y: 300, keys: keys(), probabilities: hLikely))
     }
@@ -281,6 +292,10 @@ final class TapZoneTests: XCTestCase {
         let th = NextLetterModel.distribution(prefix: "Th")        // case-insensitive
         XCTAssertGreaterThan(th["e"] ?? 0, th["z"] ?? 0)
         XCTAssertGreaterThan(NextLetterModel.distribution(prefix: "q")["u"] ?? 0, 0.9)
+        let bata = NextLetterModel.distribution(prefix: "bata")    // Hinglish: batao / bataya / batana
+        XCTAssertGreaterThan(bata["o"] ?? 0, bata["p"] ?? 0)
+        let nah = NextLetterModel.distribution(prefix: "nah")      // Hinglish: nahi / nahin
+        XCTAssertGreaterThan(nah["i"] ?? 0, nah["z"] ?? 0); XCTAssertGreaterThan(nah["i"] ?? 0, 0.3)
         XCTAssertFalse(NextLetterModel.distribution(prefix: "zzq").isEmpty)   // unknown prefix falls back to letter pairs
     }
     func testOldSettingsStillDecode() throws {
