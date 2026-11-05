@@ -16,7 +16,7 @@ public struct TapZoneKey: Equatable {
         let dy = max(y - py, py - (y + height), 0) / max(height, 1)
         return (dx * dx + dy * dy).squareRoot()
     }
-    func contains(_ px: Double, _ py: Double) { px >= x && px < x + width && py >= y && py < y + height }
+    func contains(_ px: Double, _ py: Double) -> Bool { px >= x && px < x + width && py >= y && py < y + height }
     /// Offset from the key centre in units of the key's own width / height (0.5 = on the edge).
     func offset(_ px: Double, _ py: Double) -> (dx: Double, dy: Double) {
         ((px - (x + width / 2)) / max(width, 1), (py - (y + height / 2)) / max(height, 1))
